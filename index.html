@@ -1,0 +1,630 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>温湿度计历史数据</title>
+<script src="https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js"></script>
+<style>
+  :root{
+    --bg:#121a2b; --card:#172137; --line:#26324a; --ink:#e6ebf4; --ink2:#a9b3c6; --muted:#76819a;
+    --accent:#f2b84b;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei","Segoe UI",sans-serif;}
+  .wrap{max-width:1240px;margin:0 auto;padding:28px 20px 60px}
+  header h1{margin:0 0 6px;font-size:24px;font-weight:700}
+  header p{margin:0;color:var(--ink2);font-size:13px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:18px 18px 12px;margin-top:20px}
+  .card-head{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px;margin-bottom:6px}
+  .card-head h2{margin:0;font-size:17px;font-weight:700}
+  .controls{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+  .seg button{background:transparent;color:var(--ink2);border:0;padding:6px 14px;font-size:13px;cursor:pointer}
+  .seg button+button{border-left:1px solid var(--line)}
+  .seg button.on{background:#2a3754;color:var(--ink);font-weight:600}
+  select,.nav{background:#1d2840;color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:6px 10px;font-size:13px;cursor:pointer}
+  .nav{padding:6px 10px;line-height:1}
+  .nav:disabled{opacity:.35;cursor:default}
+  .chart{width:100%;height:420px}
+  .chart.tall{height:520px}
+  .legend{display:flex;justify-content:center;flex-wrap:wrap;gap:0;margin:6px 0 2px}
+  .legend .chip{display:flex;flex-direction:column;align-items:center;position:relative;padding:0 3px}
+  .legend .chip span{display:block;min-width:58px;text-align:center;padding:4px 8px;border-radius:6px;font-size:13px;font-weight:700}
+  .legend .chip i{position:absolute;right:-16px;bottom:-20px;font-style:normal;font-size:12px;color:var(--ink2);white-space:nowrap;font-weight:600}
+  .legend .chip + .chip{border-left:1px solid #3a4560}
+  .legend-wrap{padding-bottom:22px}
+  .checks{display:flex;gap:12px;margin-right:6px}
+  .checks label{display:flex;align-items:center;gap:5px;font-size:13px;color:var(--ink2);cursor:pointer;user-select:none}
+  .checks input{accent-color:#8fa6cc;margin:0;cursor:pointer}
+  .checks i{display:inline-block;width:14px;height:3px;border-radius:2px}
+  .note{color:var(--muted);font-size:12px;margin:8px 2px 0;line-height:1.6}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>温湿度计历史数据</h1>
+    <p id="summary"></p>
+  </header>
+
+  <section class="card">
+    <div class="card-head">
+      <h2>温度</h2>
+      <div class="controls" id="ctl-temp"></div>
+    </div>
+    <div id="chart-temp" class="chart"></div>
+    <p class="note">每小时平均值 = (该小时最低 + 最高) / 2。虚线表示缺失数据的区段，两端用实测值连接。</p>
+  </section>
+
+  <section class="card">
+    <div class="card-head">
+      <h2 id="title-ov-temp">温度 · 月内日变化叠加</h2>
+      <div class="controls" id="ctl-ov-temp"></div>
+    </div>
+    <div id="chart-ov-temp" class="chart"></div>
+    <p class="note">把当月每一天的 24 小时曲线叠在一起：阴影为当月各天该小时数值的范围（最小～最大），折线为各天的平均。仅计入有效日期；某小时缺数据的日期在该小时不参与计算。</p>
+  </section>
+
+  <section class="card">
+    <div class="card-head">
+      <h2>湿度</h2>
+      <div class="controls" id="ctl-hum"></div>
+    </div>
+    <div id="chart-hum" class="chart"></div>
+  </section>
+
+  <section class="card">
+    <div class="card-head">
+      <h2 id="title-ov-hum">湿度 · 月内日变化叠加</h2>
+      <div class="controls" id="ctl-ov-hum"></div>
+    </div>
+    <div id="chart-ov-hum" class="chart"></div>
+  </section>
+
+  <section class="card">
+    <div class="card-head">
+      <h2 id="title-tile">每小时平均温度</h2>
+      <div class="controls" id="ctl-tile"></div>
+    </div>
+    <div id="chart-tile" class="chart tall"></div>
+    <div class="legend-wrap"><div class="legend" id="legend-temp"></div></div>
+    <p class="note" id="note-tile"></p>
+  </section>
+
+  <section class="card">
+    <div class="card-head">
+      <h2 id="title-dew">湿度舒适等级（按露点）</h2>
+      <div class="controls" id="ctl-dew"></div>
+    </div>
+    <div id="chart-dew" class="chart tall"></div>
+    <div class="legend-wrap"><div class="legend" id="legend-dew"></div></div>
+    <p class="note">露点由每小时平均温度与平均湿度经 Magnus 公式计算（a = 17.62, b = 243.12℃）。每天各等级占比 = 该等级小时数 / 当天有效小时数。折线为“闷热及以上”（露点 ≥ 18℃）的占比。</p>
+  </section>
+</div>
+
+<script>
+(async () => {
+/* ================= 配置 ================= */
+const CONFIG = {
+  locationName: '上海',
+  lat: 31.23, lon: 121.47, tz: 8,   // 用于计算日出日落
+  minHoursPerDay: 12,               // 有效小时数低于此值的日期视为“数据不足”
+  dataUrl: 'data/history.csv'       // 温湿度计导出的 CSV
+};
+
+const TEMP_BANDS = [   // 上限（不含），名称，颜色
+  {max:-9, name:'严寒', color:'#4f97ad'},
+  {max:0,  name:'极冷', color:'#7dc3dc'},
+  {max:7,  name:'寒冷', color:'#5b8a57'},
+  {max:13, name:'冷',   color:'#6fa66c'},
+  {max:18, name:'凉爽', color:'#8dc26f'},
+  {max:24, name:'舒适', color:'#e8cb74'},
+  {max:29, name:'温暖', color:'#c8735f'},
+  {max:35, name:'热',   color:'#b25a52'},
+  {max:Infinity, name:'酷热', color:'#9a4540'}
+];
+const DEW_BANDS = [    // 露点上限（不含）
+  {max:13, name:'干燥',     color:'#2b3650', ink:'#e6ebf4'},
+  {max:16, name:'舒适',     color:'#cdeec0'},
+  {max:18, name:'潮湿',     color:'#ffffc6'},
+  {max:21, name:'闷热',     color:'#ffc8a4'},
+  {max:24, name:'沉闷',     color:'#ff6fb5'},
+  {max:Infinity, name:'令人难受', color:'#ff6845'}
+];
+const LINE_COLORS = {max:'#ef7b5f', avg:'#f2c96b', min:'#6fb6e0'};
+const BG = '#172137', GRID = '#26324a', AXIS = '#76819a', INK = '#e6ebf4', INK2 = '#a9b3c6';
+
+/* ================= 数据解析 ================= */
+const pad = n => String(n).padStart(2,'0');
+const r1 = v => Math.round(v*10)/10;
+function dewPoint(T, RH){
+  const a = 17.62, b = 243.12;
+  const g = Math.log(RH/100) + a*T/(b+T);
+  return b*g/(a-g);
+}
+function band(bands, v){ return bands.find(b => v < b.max); }
+
+function parseCSV(text){
+  const out = [];
+  text.split(/\r?\n/).forEach(line => {
+    const p = line.split(/[,\t]/);
+    const m = p[0] && p[0].trim().match(/^(\d{4})[-\/](\d{1,2})[-\/](\d{1,2})\s+(\d{1,2}):(\d{2})/);
+    if (!m || p.length < 5) return;
+    const tmin=+p[1], hmin=+p[2], tmax=+p[3], hmax=+p[4];
+    if ([tmin,hmin,tmax,hmax].some(isNaN)) return;
+    const y=+m[1], mo=+m[2], d=+m[3], h=+m[4];
+    const tavg=(tmin+tmax)/2, havg=(hmin+hmax)/2;
+    out.push({date:`${y}-${pad(mo)}-${pad(d)}`, y, m:mo, d, h, tmin, tmax, hmin, hmax, tavg, havg, td:dewPoint(tavg, havg)});
+  });
+  return out;
+}
+
+let csvText;
+try {
+  const res = await fetch(CONFIG.dataUrl, {cache:'no-cache'});
+  if (!res.ok) throw new Error(res.status + ' ' + res.statusText);
+  csvText = await res.text();
+} catch (e) {
+  document.getElementById('summary').textContent = `数据加载失败：${CONFIG.dataUrl}（${e.message}）。本地预览请通过 HTTP 服务打开，例如 python -m http.server`;
+  return;
+}
+const RECORDS = parseCSV(csvText);
+const BY_DATE = {};   // date -> Array(24) of record|null
+RECORDS.forEach(r => { (BY_DATE[r.date] ||= Array(24).fill(null))[r.h] = r; });
+
+function dayStats(date){
+  const hrs = (BY_DATE[date]||[]).filter(Boolean);
+  if (!hrs.length) return {count:0, valid:false, hrs};
+  const s = {count:hrs.length, valid:hrs.length >= CONFIG.minHoursPerDay, hrs,
+    tmax:Math.max(...hrs.map(r=>r.tmax)), tmin:Math.min(...hrs.map(r=>r.tmin)),
+    hmax:Math.max(...hrs.map(r=>r.hmax)), hmin:Math.min(...hrs.map(r=>r.hmin)),
+    tavg:hrs.reduce((a,r)=>a+r.tavg,0)/hrs.length,
+    havg:hrs.reduce((a,r)=>a+r.havg,0)/hrs.length,
+    tdavg:hrs.reduce((a,r)=>a+r.td,0)/hrs.length};
+  return s;
+}
+const daysInMonth = (y,m) => new Date(y, m, 0).getDate();
+const DATES = Object.keys(BY_DATE).sort();
+const MONTHS = [...new Set(DATES.map(d=>d.slice(0,7)))];
+const YEARS  = [...new Set(DATES.map(d=>d.slice(0,4)))];
+
+document.getElementById('summary').textContent =
+  `数据范围 ${DATES[0]} ～ ${DATES[DATES.length-1]} · 共 ${RECORDS.length} 条每小时记录 · 位置 ${CONFIG.locationName}`;
+
+/* ================= 日出日落（NOAA 近似算法） ================= */
+function sunTimes(y, m, d, zenithDeg){
+  const N = Math.round((Date.UTC(y,m-1,d) - Date.UTC(y,0,0)) / 864e5);
+  const g = 2*Math.PI/365*(N-1);
+  const eq = 229.18*(0.000075+0.001868*Math.cos(g)-0.032077*Math.sin(g)-0.014615*Math.cos(2*g)-0.040849*Math.sin(2*g));
+  const decl = 0.006918-0.399912*Math.cos(g)+0.070257*Math.sin(g)-0.006758*Math.cos(2*g)+0.000907*Math.sin(2*g)-0.002697*Math.cos(3*g)+0.00148*Math.sin(3*g);
+  const lat = CONFIG.lat*Math.PI/180, z = zenithDeg*Math.PI/180;
+  const cosH = Math.cos(z)/(Math.cos(lat)*Math.cos(decl)) - Math.tan(lat)*Math.tan(decl);
+  const H = Math.acos(Math.max(-1, Math.min(1, cosH)))*180/Math.PI;
+  const rise = 720 - 4*(CONFIG.lon + H) - eq + CONFIG.tz*60;
+  const set  = 720 - 4*(CONFIG.lon - H) - eq + CONFIG.tz*60;
+  return {rise:rise/60, set:set/60};
+}
+const fmtHM = h => `${pad(Math.floor(h))}:${pad(Math.round((h%1)*60)%60)}`;
+
+/* ================= 通用控件 ================= */
+function buildControls(el, {modes, initMode, options, onChange}){
+  // modes: [{key,label}] 可选；options(mode) -> [{value,label}]
+  let mode = initMode;
+  el.innerHTML = '';
+  let seg;
+  if (modes){
+    seg = document.createElement('div'); seg.className='seg';
+    modes.forEach(md => {
+      const b = document.createElement('button'); b.textContent = md.label; b.dataset.k = md.key;
+      b.onclick = () => { mode = md.key; refreshOptions(true); };
+      seg.appendChild(b);
+    });
+    el.appendChild(seg);
+  }
+  const prev = document.createElement('button'); prev.className='nav'; prev.textContent='◀';
+  const sel = document.createElement('select');
+  const next = document.createElement('button'); next.className='nav'; next.textContent='▶';
+  el.append(prev, sel, next);
+  function refreshOptions(resetToLast){
+    if (seg) [...seg.children].forEach(b => b.classList.toggle('on', b.dataset.k===mode));
+    const opts = options(mode);
+    const old = sel.value;
+    sel.innerHTML = opts.map(o=>`<option value="${o.value}">${o.label}</option>`).join('');
+    sel.value = (!resetToLast && opts.some(o=>o.value===old)) ? old : opts[opts.length-1].value;
+    fire();
+  }
+  function fire(){
+    prev.disabled = sel.selectedIndex <= 0;
+    next.disabled = sel.selectedIndex >= sel.options.length-1;
+    onChange(mode, sel.value);
+  }
+  sel.onchange = fire;
+  prev.onclick = () => { if (sel.selectedIndex>0){ sel.selectedIndex--; fire(); } };
+  next.onclick = () => { if (sel.selectedIndex<sel.options.length-1){ sel.selectedIndex++; fire(); } };
+  refreshOptions(true);
+}
+function periodOptions(mode){
+  if (mode==='day')   return DATES.map(d=>({value:d, label:d}));
+  if (mode==='month') return MONTHS.map(m=>({value:m, label:`${m.slice(0,4)}年${+m.slice(5)}月`}));
+  return YEARS.map(y=>({value:y, label:`${y}年`}));
+}
+
+/* ================= 图 1 / 2：折线 ================= */
+// 计算 [x, y|null] 点列
+function linePoints(field, mode, key){
+  const pts = {max:[], min:[], avg:[]}, meta = {};
+  if (mode==='day'){
+    const arr = BY_DATE[key] || Array(24).fill(null);
+    for (let h=0; h<24; h++){
+      const r = arr[h];
+      pts.max.push([h, r ? r[field+'max'] : null]);
+      pts.min.push([h, r ? r[field+'min'] : null]);
+      pts.avg.push([h, r ? r1(r[field+'avg']) : null]);
+      meta[h] = {label:`${key} ${pad(h)}:00–${pad(h+1)}:00`, missing: !r};
+    }
+    return {pts, meta, xMin:0, xMax:23, xFmt:v=>`${pad(v)}:00`, interval:2};
+  }
+  if (mode==='month'){
+    const [y,m] = key.split('-').map(Number), N = daysInMonth(y,m);
+    for (let d=1; d<=N; d++){
+      const s = dayStats(`${key}-${pad(d)}`);
+      const ok = s.valid;
+      pts.max.push([d, ok ? s[field+'max'] : null]);
+      pts.min.push([d, ok ? s[field+'min'] : null]);
+      pts.avg.push([d, ok ? r1(s[field+'avg']) : null]);
+      meta[d] = {label:`${m}月${d}日`, count:s.count, insufficient: s.count>0 && !ok, missing: s.count===0};
+    }
+    return {pts, meta, xMin:1, xMax:N, xFmt:v=>`${v}日`, interval:null};
+  }
+  // year
+  for (let m=1; m<=12; m++){
+    const mk = `${key}-${pad(m)}`;
+    const hrs = DATES.filter(d=>d.startsWith(mk)).map(dayStats).filter(s=>s.valid).flatMap(s=>s.hrs);
+    const ok = hrs.length > 0;
+    pts.max.push([m, ok ? Math.max(...hrs.map(r=>r[field+'max'])) : null]);
+    pts.min.push([m, ok ? Math.min(...hrs.map(r=>r[field+'min'])) : null]);
+    pts.avg.push([m, ok ? r1(hrs.reduce((a,r)=>a+r[field+'avg'],0)/hrs.length) : null]);
+    const days = new Set(hrs.map(r=>r.date)).size;
+    meta[m] = {label:`${key}年${m}月`, days, missing:!ok};
+  }
+  return {pts, meta, xMin:1, xMax:12, xFmt:v=>`${v}月`, interval:1};
+}
+
+// 实线 + 缺口虚线（同名，图例联动）
+function lineWithGaps(name, color, data, z){
+  const solid = {
+    id:`main-${name}`, name, type:'line', z, data:data.map(([x,y]) => [x, y==null ? '-' : y]),
+    connectNulls:false, showSymbol:true, symbol:'circle', symbolSize:5,
+    lineStyle:{width:2, color}, itemStyle:{color, borderColor:BG, borderWidth:1},
+    emphasis:{focus:'none', scale:1.6}
+  };
+  const gap = [];
+  let lastIdx = -1;
+  data.forEach(([x,y], i) => {
+    if (y==null) return;
+    if (lastIdx >= 0 && i - lastIdx > 1){
+      gap.push(data[lastIdx], [x,y], [(data[lastIdx][0]+x)/2 + 0.0001, '-']);
+    }
+    lastIdx = i;
+  });
+  const dashed = {
+    id:`gap-${name}`, name, type:'line', z:z-1, data:gap, connectNulls:false, showSymbol:false,
+    lineStyle:{width:1.5, color, type:[4,4], opacity:.7}, silent:true, tooltip:{show:false}
+  };
+  return [solid, dashed];
+}
+
+function setupLineChart(chartId, ctlId, field, unit){
+  const chart = echarts.init(document.getElementById(chartId));
+  window.addEventListener('resize', () => chart.resize());
+  const names = field==='t' ? {max:'最高温度', avg:'平均温度', min:'最低温度'} : {max:'最高湿度', avg:'平均湿度', min:'最低湿度'};
+  buildControls(document.getElementById(ctlId), {
+    modes:[{key:'day',label:'日'},{key:'month',label:'月'},{key:'year',label:'年'}],
+    initMode:'month', options:periodOptions,
+    onChange(mode, key){
+      const P = linePoints(field, mode, key);
+      const series = [
+        ...lineWithGaps(names.max, LINE_COLORS.max, P.pts.max, 5),
+        ...lineWithGaps(names.avg, LINE_COLORS.avg, P.pts.avg, 6),
+        ...lineWithGaps(names.min, LINE_COLORS.min, P.pts.min, 5)
+      ];
+      // 月视图：标出数据不足的日期
+      const bad = Object.entries(P.meta).filter(([,m]) => m.insufficient || (mode==='month' && m.missing));
+      {
+        series[0].markArea = {silent:true, itemStyle:{color:'rgba(150,160,185,.10)'},
+          label:{color:AXIS, fontSize:11, position:'insideTop'},
+          data: bad.map(([x,m]) => [{xAxis:+x-0.5, name: m.insufficient ? `数据不足\n${m.count}h` : '无数据'}, {xAxis:+x+0.5}])};
+      }
+      const anyData = P.pts.avg.some(p=>p[1]!=null);
+      chart.setOption({
+        backgroundColor:'transparent', animationDuration:400,
+        legend:{top:0, textStyle:{color:INK2}, itemWidth:18, itemHeight:3, icon:'roundRect',
+          data:[names.max, names.avg, names.min]},
+        grid:{left:48, right:20, top:40, bottom:36},
+        tooltip:{trigger:'axis', backgroundColor:'#0e1524', borderColor:GRID, textStyle:{color:INK, fontSize:12},
+          axisPointer:{type:'line', lineStyle:{color:AXIS, type:'dashed'}},
+          formatter(ps){
+            const x = Math.round(ps[0].axisValue), m = P.meta[x]; if (!m) return '';
+            let html = `<b>${m.label}</b>`;
+            if (m.missing) return html + `<br><span style="color:${AXIS}">无数据</span>`;
+            if (m.insufficient) return html + `<br><span style="color:${AXIS}">仅 ${m.count} 小时数据，未计入</span>`;
+            ps.filter(p => p.seriesId.startsWith('main') && p.value[1] !== '-').forEach(p => {
+              html += `<br>${p.marker}${p.seriesName}　<b>${p.value[1]}${unit}</b>`;
+            });
+            if (mode==='month' && m.count < 24) html += `<br><span style="color:${AXIS}">缺 ${24-m.count} 小时</span>`;
+            if (mode==='year') html += `<br><span style="color:${AXIS}">${m.days} 天有效数据</span>`;
+            return html;
+          }},
+        xAxis:{type:'value', min:mode==='day'?0:P.xMin-1, max:mode==='day'?23:P.xMax+1, interval:P.interval ?? undefined, minInterval:1,
+          axisLine:{lineStyle:{color:GRID}}, axisTick:{show:false}, splitLine:{show:false},
+          axisLabel:{color:AXIS, formatter:v => Number.isInteger(v) && v>=P.xMin && v<=P.xMax ? P.xFmt(v) : ''}},
+        yAxis:{type:'value', scale:true, axisLabel:{color:AXIS, formatter:`{value}${unit}`},
+          splitLine:{lineStyle:{color:GRID}}, axisLine:{show:false}},
+        graphic: anyData ? [] : [{type:'text', left:'center', top:'middle', style:{text:'该时段无数据', fill:AXIS, fontSize:14}}],
+        series
+      }, {replaceMerge:['series','graphic']});
+    }
+  });
+}
+
+
+/* ================= 月内日变化叠加（范围带 + 平均线） ================= */
+function setupOverlay(chartId, ctlId, titleId, field, unit){
+  const chart = echarts.init(document.getElementById(chartId));
+  window.addEventListener('resize', () => chart.resize());
+  const label = field==='t' ? '温度' : '湿度';
+  const KINDS = [
+    {k:'max', name:`最高${label}`, color:LINE_COLORS.max},
+    {k:'avg', name:`平均${label}`, color:LINE_COLORS.avg},
+    {k:'min', name:`最低${label}`, color:LINE_COLORS.min}
+  ];
+  const hexA = (hex, a) => { const n = parseInt(hex.slice(1),16); return `rgba(${n>>16},${(n>>8)&255},${n&255},${a})`; };
+  const visible = {max:true, avg:true, min:true};
+  let curKey = null;
+  const ctl = document.getElementById(ctlId);
+  buildControls(ctl, {
+    options:() => periodOptions('month'),
+    onChange(_, key){ curKey = key; render(); }
+  });
+  // 复选框：选择显示哪些（默认全部）
+  const box = document.createElement('div'); box.className = 'checks';
+  KINDS.forEach(({k, name, color}) => {
+    const lb = document.createElement('label');
+    lb.innerHTML = `<input type="checkbox" checked><i style="background:${color}"></i>${name}`;
+    lb.querySelector('input').onchange = e => { visible[k] = e.target.checked; render(); };
+    box.appendChild(lb);
+  });
+  ctl.prepend(box);
+  function render(){
+      const key = curKey;
+      const ACTIVE = KINDS.filter(x => visible[x.k]);
+      const [y,m] = key.split('-').map(Number);
+      document.getElementById(titleId).textContent = `${label} · ${y}年${m}月 日变化叠加`;
+      const validDays = DATES.filter(d => d.startsWith(key)).filter(d => dayStats(d).valid);
+      // stats[kind][h] = {lo, hi, mean, n}
+      const stats = {};
+      KINDS.forEach(({k}) => {
+        stats[k] = [];
+        for (let h=0; h<24; h++){
+          const vals = validDays.map(d => BY_DATE[d][h]).filter(Boolean).map(r => r[field+k]);
+          stats[k].push(vals.length ? {lo:Math.min(...vals), hi:Math.max(...vals), mean:r1(vals.reduce((a,v)=>a+v,0)/vals.length), n:vals.length} : null);
+        }
+      });
+      const all = ACTIVE.flatMap(({k}) => stats[k].filter(Boolean).flatMap(s => [s.lo, s.hi]));
+      const step = field==='t' ? 5 : 10;
+      const yr = all.length ? {min:Math.floor(Math.min(...all)/step)*step, max:Math.ceil(Math.max(...all)/step)*step} : {};
+      if (field==='h'){ yr.min = Math.max(0, yr.min); yr.max = Math.min(100, yr.max); }
+      const series = [];
+      ACTIVE.forEach(({k, name, color}) => {
+        const S = stats[k];
+        // 范围带：按连续有数据的小时段绘制多边形
+        const segs = []; let cur = [];
+        S.forEach((s,h) => { if (s) cur.push([h, s]); else if (cur.length){ segs.push(cur); cur = []; } });
+        if (cur.length) segs.push(cur);
+        series.push({id:`band-${k}`, name, type:'custom', silent:true, tooltip:{show:false}, z:1, data:[0],
+          itemStyle:{color}, encode:{x:-1, y:-1},
+          renderItem(params, api){
+            return {type:'group', children: segs.map(seg => {
+              const pts = seg.length === 1
+                ? [[seg[0][0]-0.15, seg[0][1].hi], [seg[0][0]+0.15, seg[0][1].hi], [seg[0][0]+0.15, seg[0][1].lo], [seg[0][0]-0.15, seg[0][1].lo]]
+                : [...seg.map(([h,s]) => [h, s.hi]), ...seg.slice().reverse().map(([h,s]) => [h, s.lo])];
+              return {type:'polygon', shape:{points:pts.map(pt => api.coord(pt))}, style:{fill:hexA(color, .13), stroke:hexA(color, .55), lineWidth:1, lineDash:[3,3]}};
+            })};
+          }});
+        series.push(...lineWithGaps(name, color, S.map((s,h)=>[h, s ? s.mean : null]), 5 + (k==='avg')));
+      });
+      chart.setOption({
+        backgroundColor:'transparent', animationDuration:400,
+        grid:{left:48, right:20, top:16, bottom:36},
+        tooltip:{trigger:'axis', backgroundColor:'#0e1524', borderColor:GRID, textStyle:{color:INK, fontSize:12},
+          axisPointer:{type:'line', lineStyle:{color:AXIS, type:'dashed'}},
+          formatter(ps){
+            const h = Math.round(ps[0].axisValue);
+            let html = `<b>${m}月各天 ${pad(h)}:00–${pad(h+1)}:00</b>`;
+            ACTIVE.forEach(({k,name,color}) => {
+              const s = stats[k][h];
+              const dot = `<span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:${color};margin-right:5px"></span>`;
+              html += s ? `<br>${dot}${name}　平均 <b>${s.mean}${unit}</b> <span style="color:${AXIS}">范围 ${s.lo}～${s.hi}${unit}</span>`
+                        : `<br>${dot}${name}　<span style="color:${AXIS}">无数据</span>`;
+            });
+            const n = stats.avg[h] ? stats.avg[h].n : 0;
+            html += `<br><span style="color:${AXIS}">${n} 天参与计算</span>`;
+            return html;
+          }},
+        xAxis:{type:'value', min:0, max:23, interval:2, axisLine:{lineStyle:{color:GRID}}, axisTick:{show:false}, splitLine:{show:false},
+          axisLabel:{color:AXIS, formatter:v => `${pad(v)}:00`}},
+        yAxis:{type:'value', scale:true, min:yr.min, max:yr.max, interval:step, axisLabel:{color:AXIS, formatter:`{value}${unit}`}, splitLine:{lineStyle:{color:GRID}}, axisLine:{show:false}},
+        graphic: !validDays.length ? [{type:'text', left:'center', top:'middle', style:{text:'该月无有效数据', fill:AXIS, fontSize:14}}]
+               : !ACTIVE.length ? [{type:'text', left:'center', top:'middle', style:{text:'请至少勾选一项', fill:AXIS, fontSize:14}}] : [],
+        series
+      }, {notMerge:true});
+  }
+}
+
+/* ================= 图例芯片 ================= */
+function renderLegend(elId, bands, darkText){
+  document.getElementById(elId).innerHTML = bands.map((b,i) => {
+    const t = i < bands.length-1 ? `<i>${b.max}°C</i>` : '';
+    const ink = b.ink || (darkText ? '#1a1f2b' : '#fff');
+    return `<div class="chip"><span style="background:${b.color};color:${ink}">${b.name}</span>${t}</div>`;
+  }).join('');
+}
+
+/* ================= 图 3：每小时平均温度瓦片 ================= */
+function setupTile(){
+  const chart = echarts.init(document.getElementById('chart-tile'));
+  window.addEventListener('resize', () => chart.resize());
+  renderLegend('legend-temp', TEMP_BANDS, false);
+  buildControls(document.getElementById('ctl-tile'), {
+    options:() => periodOptions('month'),
+    onChange(_, key){
+      const [y,m] = key.split('-').map(Number), N = daysInMonth(y,m);
+      document.getElementById('title-tile').textContent = `${y}年${m}月 每小时平均温度`;
+      const cells = [], badDays = [], sun = [];
+      for (let d=1; d<=N; d++){
+        const date = `${key}-${pad(d)}`, s = dayStats(date);
+        const st = sunTimes(y,m,d,90.833), tw = sunTimes(y,m,d,96);
+        sun.push({d, rise:st.rise, set:st.set, dawn:tw.rise, dusk:tw.set});
+        if (!s.valid){ badDays.push([d, s.count]); continue; }
+        const arr = BY_DATE[date];
+        for (let h=0; h<24; h++) cells.push([d, h, arr[h] ? r1(arr[h].tavg) : null]);
+      }
+      // 夜晚阴影多边形（日出前 / 日落后，民用晨昏蒙影叠加更浅一层）
+      const poly = (key, edge) => [[0.5, edge], [0.5, sun[0][key]], ...sun.map(s=>[s.d, s[key]]), [N+0.5, sun[N-1][key]], [N+0.5, edge]];
+      const shades = [
+        {pts:poly('dawn',0), a:.30}, {pts:poly('rise',0), a:.22},
+        {pts:poly('dusk',24), a:.30}, {pts:poly('set',24), a:.22}
+      ];
+      document.getElementById('note-tile').textContent =
+        `每格为该小时平均温度，按体感区间着色。阴影叠加表示夜晚和民用晨昏蒙影（按${CONFIG.locationName} ${CONFIG.lat}°N ${CONFIG.lon}°E 计算）。` +
+        (badDays.length ? ` 有效小时数少于 ${CONFIG.minHoursPerDay} 的日期以灰色“数据不足”显示。` : '') + ' 深色格为该小时无数据。';
+      chart.setOption({
+        backgroundColor:'transparent', animation:false,
+        grid:{left:58, right:58, top:12, bottom:34},
+        tooltip:{trigger:'item', backgroundColor:'#0e1524', borderColor:GRID, textStyle:{color:INK, fontSize:12},
+          formatter(p){
+            if (p.seriesId==='bad') return `<b>${m}月${p.value[0]}日</b><br><span style="color:${AXIS}">${p.value[1] ? `数据不足（${p.value[1]} 小时）` : '无数据'}</span>`;
+            const [d,h,v] = p.value, s = sun[d-1];
+            const head = `<b>${m}月${d}日 ${pad(h)}:00–${pad(h+1)}:00</b>`;
+            const sunLine = `<br><span style="color:${AXIS}">日出 ${fmtHM(s.rise)} · 日落 ${fmtHM(s.set)}</span>`;
+            if (v==null) return head + `<br><span style="color:${AXIS}">无数据</span>` + sunLine;
+            const r = BY_DATE[`${key}-${pad(d)}`][h], b = band(TEMP_BANDS, v);
+            return `${head}<br><span style="display:inline-block;width:9px;height:9px;border-radius:2px;background:${b.color};margin-right:5px"></span>平均 <b>${v}℃</b>（${b.name}）<br>最低 ${r.tmin}℃ · 最高 ${r.tmax}℃` + sunLine;
+          }},
+        xAxis:{type:'value', min:0.5, max:N+0.5, interval:1, axisLine:{lineStyle:{color:GRID}}, axisTick:{show:false},
+          splitLine:{show:false},
+          axisLabel:{color:AXIS, formatter:v => (v===1 || v%5===0) && v<=N ? `${m}/${v}` : ''}},
+        yAxis:[0,1].map(i => ({type:'value', min:0, max:24, interval:2, position:i?'right':'left',
+          axisLine:{show:false}, axisTick:{show:false}, splitLine:{show:i===0, lineStyle:{color:'rgba(255,255,255,.06)'}},
+          axisLabel:{color:AXIS, formatter:v => `${pad(v)}:00`}})),
+        series:[
+          {id:'cells', type:'custom', data:cells, encode:{x:0, y:1},
+            renderItem(params, api){
+              const d = api.value(0), h = api.value(1), v = api.value(2);
+              const p0 = api.coord([d-0.5, h+1]), p1 = api.coord([d+0.5, h]);
+              const shape = {x:p0[0], y:p0[1], width:p1[0]-p0[0], height:p1[1]-p0[1]};
+              if (isNaN(v) || v==null) return {type:'rect', shape, style:{fill:'rgba(140,150,175,.18)', stroke:'rgba(140,150,175,.35)', lineWidth:.5}};
+              return {type:'rect', shape, style:{fill:band(TEMP_BANDS, v).color}};
+            }},
+          {id:'bad', type:'custom', data:badDays, encode:{x:0},
+            renderItem(params, api){
+              const d = api.value(0), p0 = api.coord([d-0.5, 24]), p1 = api.coord([d+0.5, 0]);
+              return {type:'group', children:[
+                {type:'rect', shape:{x:p0[0], y:p0[1], width:p1[0]-p0[0], height:p1[1]-p0[1]}, style:{fill:'rgba(140,150,175,.14)'}},
+                {type:'text', x:(p0[0]+p1[0])/2, y:(p0[1]+p1[1])/2, rotation:Math.PI/2,
+                  style:{text: api.value(1) > 0 ? '数据不足' : '无数据', fill:AXIS, fontSize:11, align:'center', verticalAlign:'middle'}}
+              ]};
+            }},
+          {id:'night', type:'custom', data:[0], silent:true, z:10,
+            renderItem(params, api){
+              return {type:'group', children: shades.map(s => ({type:'polygon',
+                shape:{points:s.pts.map(pt => api.coord(pt))}, style:{fill:`rgba(8,12,24,${s.a})`}}))};
+            }}
+        ]
+      }, {notMerge:true});
+    }
+  });
+}
+
+/* ================= 图 4：露点舒适等级占比 ================= */
+function setupDew(){
+  const chart = echarts.init(document.getElementById('chart-dew'));
+  window.addEventListener('resize', () => chart.resize());
+  renderLegend('legend-dew', DEW_BANDS, true);
+  buildControls(document.getElementById('ctl-dew'), {
+    options:() => periodOptions('month'),
+    onChange(_, key){
+      const [y,m] = key.split('-').map(Number), N = daysInMonth(y,m);
+      document.getElementById('title-dew').textContent = `${y}年${m}月 湿度舒适等级（按露点）`;
+      const days = [], perBand = DEW_BANDS.map(() => []), info = [], bad = [], muggy = [];
+      for (let d=1; d<=N; d++){
+        const s = dayStats(`${key}-${pad(d)}`);
+        days.push(`${m}/${d}`);
+        if (!s.valid){
+          perBand.forEach(a => a.push('-')); bad.push(100); muggy.push('-');
+          info.push({count:s.count, valid:false}); continue;
+        }
+        const cnt = DEW_BANDS.map(() => 0);
+        s.hrs.forEach(r => cnt[DEW_BANDS.indexOf(band(DEW_BANDS, r.td))]++);
+        cnt.forEach((c,i) => perBand[i].push(r1(c/s.count*100)));
+        bad.push('-');
+        const mg = (cnt[3]+cnt[4]+cnt[5])/s.count*100;
+        const labelDays = [1, 11, 21, N];
+        muggy.push({value:Math.round(mg), label:{show: labelDays.includes(d)}});
+        info.push({count:s.count, valid:true, cnt, tdavg:s.tdavg, tdmin:Math.min(...s.hrs.map(r=>r.td)), tdmax:Math.max(...s.hrs.map(r=>r.td))});
+      }
+      // 自底向上：令人难受 → 干燥
+      const order = DEW_BANDS.map((b,i)=>i).reverse();
+      const series = order.map(i => ({
+        name:DEW_BANDS[i].name, type:'bar', stack:'dew', data:perBand[i], barCategoryGap:'12%',
+        itemStyle:{color:DEW_BANDS[i].color, borderColor:BG, borderWidth:0.6}, emphasis:{disabled:true}
+      }));
+      series.push({name:'数据不足', type:'bar', stack:'dew', data:bad, itemStyle:{color:'rgba(140,150,175,.16)'},
+        label:{show:true, position:'inside', rotate:90, color:AXIS, fontSize:11, formatter:p => info[p.dataIndex].count ? '数据不足' : '无数据'}});
+      series.push({name:'闷热及以上', type:'line', data:muggy, z:10, connectNulls:false,
+        symbol:'circle', lineStyle:{color:'#7f93b5', width:1.5},
+        label:{position:'top', distance:8, color:INK, fontSize:12, fontWeight:600, backgroundColor:'rgba(18,26,43,.85)', padding:[2,5], borderRadius:4,
+          formatter:p => `${m}月${p.dataIndex+1}日\n${p.value}%`},
+        itemStyle:{color:'#121a2b', borderColor:INK, borderWidth:2}});
+      // 有标签的点显示圆点
+      series[series.length-1].data = muggy.map(v => v==='-' ? v : (v.label.show ? {...v, symbolSize:8, symbol:'circle'} : {...v, symbol:'none'}));
+      series[series.length-1].symbolSize = 8;
+      chart.setOption({
+        backgroundColor:'transparent', animationDuration:400,
+        grid:{left:52, right:52, top:16, bottom:34},
+        tooltip:{trigger:'axis', axisPointer:{type:'shadow', shadowStyle:{color:'rgba(255,255,255,.05)'}},
+          backgroundColor:'#0e1524', borderColor:GRID, textStyle:{color:INK, fontSize:12},
+          formatter(ps){
+            const i = ps[0].dataIndex, it = info[i];
+            let html = `<b>${m}月${i+1}日</b>`;
+            if (!it.valid) return html + `<br><span style="color:${AXIS}">${it.count ? `数据不足（${it.count} 小时）` : '无数据'}</span>`;
+            html += `<br><span style="color:${INK2}">露点 平均 ${r1(it.tdavg)}℃（${r1(it.tdmin)}～${r1(it.tdmax)}）</span>`;
+            DEW_BANDS.map((b,j)=>j).reverse().forEach(j => {
+              if (!it.cnt[j]) return;
+              const b = DEW_BANDS[j];
+              html += `<br><span style="display:inline-block;width:9px;height:9px;border-radius:2px;background:${b.color};margin-right:5px"></span>${b.name}　<b>${r1(it.cnt[j]/it.count*100)}%</b> <span style="color:${AXIS}">${it.cnt[j]}h</span>`;
+            });
+            if (it.count < 24) html += `<br><span style="color:${AXIS}">缺 ${24-it.count} 小时</span>`;
+            return html;
+          }},
+        xAxis:{type:'category', data:days, axisLine:{lineStyle:{color:GRID}}, axisTick:{show:false},
+          axisLabel:{color:AXIS, interval:(i) => i===0 || (i+1)%5===0}},
+        yAxis:[0,1].map(i => ({type:'value', min:0, max:100, interval:10, position:i?'right':'left',
+          axisLabel:{color:AXIS, formatter:'{value}%'}, splitLine:{show:i===0, lineStyle:{color:GRID}}})),
+        series
+      }, {notMerge:true});
+    }
+  });
+}
+
+setupLineChart('chart-temp', 'ctl-temp', 't', '℃');
+setupLineChart('chart-hum',  'ctl-hum',  'h', '%');
+setupOverlay('chart-ov-temp', 'ctl-ov-temp', 'title-ov-temp', 't', '℃');
+setupOverlay('chart-ov-hum', 'ctl-ov-hum', 'title-ov-hum', 'h', '%');
+setupTile();
+setupDew();
+})();
+</script>
+</body>
+</html>
