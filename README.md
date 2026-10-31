@@ -118,10 +118,10 @@ python tools/mijia_history.py auto -o data/history.csv
 
 ### 米家温湿度计3 Mini（MJWSD06MMC）的限制
 
-- **本脚本不支持 3 Mini。** 官方宣传 3 Mini 在设备本地存 3 个月、云端存 6 个月数据，米家 App 里可以看全年曲线；但目前没有找到读取其原厂固件历史的开源实现，也无法确认它是否沿用上面这套 `ebe0ccXX` 历史接口。小米较新的蓝牙设备通常需要先经过米家的身份验证才能读写数据，直接连接读取的难度更高。
+- **本脚本不支持 3 Mini。** 官方宣传 3 Mini 在设备本地存 3 个月、云端存 6 个月数据，米家 App 里可以看全年曲线；但它**没有沿用**上面这套 `ebe0ccXX` 历史接口：读取数据前必须先用米家的令牌（token）完成身份验证，直接连接无法读取，目前也没有找到读取其原厂固件历史的开源实现。
 - **原厂固件拿不到更细的粒度。** 屏幕每 6 秒刷新一次，但这只是显示；官方没有公布存储的记录间隔，能看到的就是米家 App 里的曲线。
 - **想要更细粒度的数据，有两条路：**
-  1. **刷 [pvvx](https://github.com/pvvx/ATC_MiThermometer) 自制固件**（5.1 版起支持 MJWSD06MMC）。刷完后设备会把每段时间的平均温湿度写进内部存储（循环缓冲，最多 20000 条），记录间隔可设：默认 10 分钟约存 4.5 个月，1 分钟约存两周；用 [GraphMemo.html](https://pvvx.github.io/ATC_MiThermometer/GraphMemo.html) 读取。注意 pvvx 的 [MJWSD06MMC 页面](https://pvvx.github.io/MJWSD06MMC) 给出的是主板触点与接线定义，可能需要拆壳用 USB 转串口线刷写，门槛比 LYWSD03MMC 的网页蓝牙刷机高，动手前先看清说明。
+  1. **刷 [pvvx](https://github.com/pvvx/ATC_MiThermometer) 自制固件**（5.1 版起支持 MJWSD06MMC）。刷完后设备会把每段时间的平均温湿度写进内部存储（循环缓冲，最多 20000 条），记录间隔可设：默认 10 分钟约存 4.5 个月，1 分钟约存两周；用 [GraphMemo.html](https://pvvx.github.io/ATC_MiThermometer/GraphMemo.html) 读取。刷机通过网页蓝牙即可完成，**不需要接线**；只有刷坏需要救砖时，才要拆壳按 pvvx 的 [MJWSD06MMC 页面](https://pvvx.github.io/MJWSD06MMC) 上的触点定义，用 USB 转串口线连接主板重新写入。
   2. **不刷机，长期监听广播自行记录**：用常开设备（如树莓派）持续接收广播并存库，间隔任意。原厂广播是加密的，需要先从米家账号中提取该设备的 bindkey 再解密（例如 Home Assistant 的 Xiaomi BLE 集成）。前提是监听设备一直在线。
 
 ## 本地预览
