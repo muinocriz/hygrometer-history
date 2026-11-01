@@ -116,16 +116,16 @@
       <h2>温度</h2>
       <div class="controls" id="ctl-temp"></div>
     </div>
-    <div class="ref-bar" id="ref-bar" hidden>
-      <label id="ref-on-label"><input type="checkbox" id="ref-on" checked><span class="sw"></span>显示参考气温区间柱</label>
-      <span class="src" id="ref-src"></span>
-      <button class="btn" id="ref-import" type="button">导入气象站数据</button>
-      <input type="file" id="ref-file" multiple accept=".csv,.txt,.tsv,.md,text/csv,text/plain" hidden>
-      <span class="file" id="ref-files"></span>
+    <div class="ref-bar" id="ref-bar-t" hidden>
+      <label><input type="checkbox" id="ref-on-t" checked><span class="sw"></span>显示参考气温区间柱</label>
+      <span class="src" id="ref-src-t"></span>
+      <button class="btn" id="ref-import-t" type="button">导入气象站数据</button>
+      <input type="file" id="ref-file-t" multiple accept=".csv,.txt,.tsv,.md,text/csv,text/plain" hidden>
+      <span class="file" id="ref-files-t"></span>
     </div>
     <div id="chart-temp" class="chart"></div>
-    <div class="stats" id="ref-stats" hidden></div>
-    <p class="note">月视图：半透明柱为当日最低～最高，折线为每小时最高 / 最低值；数据不足的日期不画柱子，以灰底标出。黄色窄框为参考气温（当日最低～最高）：优先使用你导入的气象站数据，其余日期使用 Open-Meteo 历史天气（ERA5 再分析格点模型数据，非站点实测，最近几天通常尚无数据），按页面顶部所选位置查询。日、年视图另含平均值，每小时平均值 = (该小时最低 + 最高) / 2。虚线表示缺失数据的区段，两端用实测值连接。</p>
+    <div class="stats" id="ref-stats-t" hidden></div>
+    <p class="note">月视图：半透明柱为当日最低～最高，折线为每小时最高 / 最低值；数据不足的日期不画柱子，以灰底标出。黄色窄框为参考气温（当日最低～最高）：优先使用你导入的气象站数据，其余日期使用 Open-Meteo 历史天气（ERA5 再分析格点模型数据，非站点实测，最近几天通常尚无数据），按页面顶部所选位置查询。<a href="https://open-meteo.com/" target="_blank" rel="noopener" style="color:#8fa6cc">Weather data by Open-Meteo.com</a>（CC BY 4.0）。日、年视图另含平均值，每小时平均值 = (该小时最低 + 最高) / 2。虚线表示缺失数据的区段，两端用实测值连接。</p>
   </section>
 
   <section class="card">
@@ -142,7 +142,16 @@
       <h2>湿度</h2>
       <div class="controls" id="ctl-hum"></div>
     </div>
+    <div class="ref-bar" id="ref-bar-h" hidden>
+      <label><input type="checkbox" id="ref-on-h" checked><span class="sw"></span>显示参考湿度区间柱</label>
+      <span class="src" id="ref-src-h"></span>
+      <button class="btn" id="ref-import-h" type="button">导入气象站数据</button>
+      <input type="file" id="ref-file-h" multiple accept=".csv,.txt,.tsv,.md,text/csv,text/plain" hidden>
+      <span class="file" id="ref-files-h"></span>
+    </div>
     <div id="chart-hum" class="chart"></div>
+    <div class="stats" id="ref-stats-h" hidden></div>
+    <p class="note">月视图：半透明柱为当日最低～最高，折线为每小时最高 / 最低值；数据不足的日期不画柱子，以灰底标出。黄色窄框为参考湿度（当日最低～最高）：优先使用你导入的气象站数据，其余日期使用 Open-Meteo 历史天气的每小时相对湿度取当日最高 / 最低（ERA5 再分析格点模型数据，非站点实测，最近几天通常尚无数据），按页面顶部所选位置查询。<a href="https://open-meteo.com/" target="_blank" rel="noopener" style="color:#8fa6cc">Weather data by Open-Meteo.com</a>（CC BY 4.0）。</p>
   </section>
 
   <section class="card">
@@ -435,7 +444,10 @@ function lineWithGaps(name, color, data, z, {symbols=true, width=2} = {}){
 }
 
 /* ================= 参考气温（气象站导入 / Open-Meteo） ================= */
-const REF = {imported:{}, files:[], om:new Map(), curMonth:null, redraw:null};
+const REF = {imported:{t:{}, h:{}}, files:{t:[], h:[]}, om:new Map(), curMonth:{t:null, h:null}, redraw:{t:null, h:null}};
+const REF_TEXT = {t:{name:'参考气温', unit:'℃', dev:'温度计', max:'最高温', min:'最低温'},
+                  h:{name:'参考湿度', unit:'%', dev:'温湿度计', max:'最高湿度', min:'最低湿度'}};
+const redrawRefs = () => ['t','h'].forEach(f => REF.redraw[f] && REF.redraw[f]());
 const REF_COLOR = '#f2b84b';
 
 // 解析气象站每日数据：支持 markdown 表格 / CSV / TSV；日期可为完整日期或仅“日”（归入当前查看的月份）
@@ -477,62 +489,72 @@ function fetchOpenMeteo(month){
   const [y,m] = month.split('-').map(Number);
   const start = `${month}-01`, today = new Date(Date.now() + CONFIG.tz*3600e3).toISOString().slice(0,10);
   let end = `${month}-${pad(daysInMonth(y,m))}`;
-  if (start > today){ REF.om.set(k, {data:{}}); return; }
+  if (start > today){ REF.om.set(k, {data:{t:{}, h:{}}}); return; }
   if (end > today) end = today;
   REF.om.set(k, {loading:true});
   const url = `https://archive-api.open-meteo.com/v1/archive?latitude=${CONFIG.lat}&longitude=${CONFIG.lon}` +
-    `&start_date=${start}&end_date=${end}&daily=temperature_2m_max,temperature_2m_min&timezone=Asia%2FShanghai`;
+    `&start_date=${start}&end_date=${end}&daily=temperature_2m_max,temperature_2m_min&hourly=relative_humidity_2m&timezone=Asia%2FShanghai`;
   fetch(url).then(r => { if (!r.ok) throw new Error(r.status); return r.json(); }).then(j => {
-    const data = {}, D = j.daily || {};
+    const data = {t:{}, h:{}}, D = j.daily || {}, H = j.hourly || {};
     (D.time || []).forEach((dt, i) => {
       const max = D.temperature_2m_max?.[i], min = D.temperature_2m_min?.[i];
-      if (max != null && min != null) data[dt] = {max:r1(max), min:r1(min)};
+      if (max != null && min != null) data.t[dt] = {max:r1(max), min:r1(min)};
     });
+    // 每小时相对湿度 → 当日最高 / 最低（需至少 20 个小时有值）
+    const byDay = {};
+    (H.time || []).forEach((ts, i) => {
+      const v = H.relative_humidity_2m?.[i]; if (v == null) return;
+      (byDay[ts.slice(0,10)] ||= []).push(v);
+    });
+    Object.entries(byDay).forEach(([dt, vs]) => { if (vs.length >= 20) data.h[dt] = {max:r1(Math.max(...vs)), min:r1(Math.min(...vs))}; });
     REF.om.set(k, {data});
-  }).catch(e => REF.om.set(k, {data:{}, error:e.message || '网络错误'}))
-    .finally(() => { if (REF.redraw) REF.redraw(); });
+  }).catch(e => REF.om.set(k, {data:{t:{}, h:{}}, error:e.message || '网络错误'}))
+    .finally(redrawRefs);
 }
 
 // 返回某月每天的参考数据 {d: {max, min, src}} 及状态
-function refForMonth(month){
+function refForMonth(month, field){
   const [y,m] = month.split('-').map(Number), N = daysInMonth(y,m);
   fetchOpenMeteo(month);
-  const om = REF.om.get(omKey(month)) || {};
+  const om = REF.om.get(omKey(month)) || {}, omData = om.data ? om.data[field] : null, imp = REF.imported[field];
   const days = {}; let nImp = 0, nOm = 0;
   for (let d=1; d<=N; d++){
     const date = `${month}-${pad(d)}`;
-    if (REF.imported[date]){ days[d] = {...REF.imported[date], src:'imp'}; nImp++; }
-    else if (om.data && om.data[date]){ days[d] = {...om.data[date], src:'om'}; nOm++; }
+    if (imp[date]){ days[d] = {...imp[date], src:'imp'}; nImp++; }
+    else if (omData && omData[date]){ days[d] = {...omData[date], src:'om'}; nOm++; }
   }
   return {days, nImp, nOm, loading:!!om.loading, error:om.error};
 }
 const REF_SRC_NAME = {imp:'气象站（导入）', om:'Open-Meteo 再分析'};
 
-function setupRefControls(){
-  const input = document.getElementById('ref-file');
-  document.getElementById('ref-import').onclick = () => input.click();
+function setupRefControls(field){
+  const $ = id => document.getElementById(`${id}-${field}`);
+  const input = $('ref-file');
+  $('ref-import').onclick = () => input.click();
   input.onchange = async () => {
-    const month = REF.curMonth || MONTHS[MONTHS.length-1];
+    const month = REF.curMonth[field] || MONTHS[MONTHS.length-1];
     for (const f of [...input.files]){
       const res = parseStation(await readFileText(f), month);
-      Object.assign(REF.imported, res.days);
+      Object.assign(REF.imported[field], res.days);
       const ds = Object.keys(res.days).sort();
-      REF.files.push({name:f.name, n:res.n, skipped:res.skipped, range: ds.length ? `${ds[0]} ～ ${ds[ds.length-1]}` : ''});
+      REF.files[field].push({name:f.name, n:res.n, skipped:res.skipped, range: ds.length ? `${ds[0]} ～ ${ds[ds.length-1]}` : ''});
     }
     input.value = '';
-    renderRefFiles();
-    if (REF.redraw) REF.redraw();
+    renderRefFiles(field);
+    if (REF.redraw[field]) REF.redraw[field]();
   };
-  document.getElementById('ref-on').onchange = () => { if (REF.redraw) REF.redraw(); };
+  $('ref-on').onchange = () => { if (REF.redraw[field]) REF.redraw[field](); };
 }
-function renderRefFiles(){
-  const el = document.getElementById('ref-files');
-  if (!REF.files.length){ el.innerHTML = ''; return; }
-  el.innerHTML = REF.files.map(f => f.n
+function renderRefFiles(field){
+  const el = document.getElementById(`ref-files-${field}`), files = REF.files[field];
+  if (!files.length){ el.innerHTML = ''; return; }
+  el.innerHTML = files.map(f => f.n
       ? `${esc(f.name)}：${f.n} 天（${f.range}）${f.skipped ? `，跳过 ${f.skipped} 行` : ''}`
       : `<span style="color:#ef7b5f">${esc(f.name)}：未识别到有效数据</span>`).join('；') +
-    ` <button class="link" id="ref-clear" type="button">清除</button>`;
-  document.getElementById('ref-clear').onclick = () => { REF.imported = {}; REF.files = []; renderRefFiles(); if (REF.redraw) REF.redraw(); };
+    ` <button class="link" id="ref-clear-${field}" type="button">清除</button>`;
+  document.getElementById(`ref-clear-${field}`).onclick = () => {
+    REF.imported[field] = {}; REF.files[field] = []; renderRefFiles(field); if (REF.redraw[field]) REF.redraw[field]();
+  };
 }
 
 function setupLineChart(chartId, ctlId, field, unit){
@@ -542,10 +564,8 @@ function setupLineChart(chartId, ctlId, field, unit){
     modes:[{key:'day',label:'日'},{key:'month',label:'月'},{key:'year',label:'年'}],
     initMode:'month', options:periodOptions,
     onChange(mode, key){
-      if (field === 't'){
-        document.getElementById('ref-bar').hidden = mode !== 'month';
-        if (mode !== 'month'){ document.getElementById('ref-stats').hidden = true; REF.redraw = null; }
-      }
+      document.getElementById(`ref-bar-${field}`).hidden = mode !== 'month';
+      if (mode !== 'month'){ document.getElementById(`ref-stats-${field}`).hidden = true; REF.redraw[field] = null; }
       if (mode === 'month') return drawMonth(key);
       const P = linePoints(field, mode, key);
       const series = [
@@ -607,21 +627,21 @@ function setupLineChart(chartId, ctlId, field, unit){
     }
     const bars = Object.entries(days).filter(([,s]) => s.valid).map(([d,s]) => [+d, s[field+'min'], s[field+'max']]);
     const bad = Object.entries(days).filter(([,s]) => !s.valid);
-    const rangeName = '当日范围', refName = '参考气温';
-    // 参考气温（仅温度）
+    const RT = REF_TEXT[field], rangeName = '当日范围', refName = RT.name;
+    // 参考数据（导入的气象站数据优先，其余日期用 Open-Meteo）
     let ref = null;
-    if (field === 't'){
-      REF.curMonth = key;
-      REF.redraw = () => drawMonth(key);
-      const on = document.getElementById('ref-on').checked;
-      ref = on ? refForMonth(key) : null;
+    {
+      REF.curMonth[field] = key;
+      REF.redraw[field] = () => drawMonth(key);
+      const on = document.getElementById(`ref-on-${field}`).checked;
+      ref = on ? refForMonth(key, field) : null;
       const has = ref && (ref.nImp + ref.nOm) > 0;
-      const srcEl = document.getElementById('ref-src');
+      const srcEl = document.getElementById(`ref-src-${field}`);
       if (!on) srcEl.textContent = '';
       else if (ref.loading && !has) srcEl.textContent = '正在获取 Open-Meteo 数据…';
       else if (!has) srcEl.textContent = ref.error ? `该月份暂无参考数据（Open-Meteo 获取失败：${ref.error}）` : '该月份暂无参考数据';
       else srcEl.textContent = '来源：' + [ref.nImp && `${REF_SRC_NAME.imp} ${ref.nImp} 天`, ref.nOm && `${REF_SRC_NAME.om}（${CONFIG.locationName}）${ref.nOm} 天`].filter(Boolean).join(' + ');
-      renderRefStats(key, days, has ? ref : null);
+      renderRefStats(field, days, has ? ref : null);
     }
     const series = [
       {id:'range', name:rangeName, type:'custom', data:bars, encode:{x:0, y:[1,2]}, z:1, silent:true, tooltip:{show:false},
@@ -672,7 +692,7 @@ function setupLineChart(chartId, ctlId, field, unit){
             html += `<br><span style="color:${REF_COLOR}">参考 ${rf.min}～${rf.max}${unit}</span> <span style="color:${AXIS}">${REF_SRC_NAME[rf.src]}</span>`;
             if (s.valid){
               const sg = v => (v > 0 ? '+' : '') + r1(v);
-              html += `<br><span style="color:${AXIS}">差值：最高 ${sg(s.tmax - rf.max)}${unit} · 最低 ${sg(s.tmin - rf.min)}${unit}</span>`;
+              html += `<br><span style="color:${AXIS}">差值：最高 ${sg(s[field+'max'] - rf.max)}${unit} · 最低 ${sg(s[field+'min'] - rf.min)}${unit}</span>`;
             }
           }
           return html;
@@ -689,16 +709,17 @@ function setupLineChart(chartId, ctlId, field, unit){
 }
 
 
-function renderRefStats(month, days, ref){
-  const el = document.getElementById('ref-stats');
+function renderRefStats(field, days, ref){
+  const el = document.getElementById(`ref-stats-${field}`), T = REF_TEXT[field], u = T.unit;
   const ds = ref ? Object.keys(ref.days).map(Number).filter(d => days[d] && days[d].valid) : [];
   if (!ds.length){ el.hidden = true; el.innerHTML = ''; return; }
   const avg = f => r1(ds.reduce((a,d) => a + f(d), 0) / ds.length);
   const sg = v => (v > 0 ? '+' : '') + v;
+  const mx = field+'max', mn = field+'min';
   const items = [
-    ['当日最高温 平均差值（温度计 − 参考）', sg(avg(d => days[d].tmax - ref.days[d].max)) + '℃', `温度计 ${avg(d=>days[d].tmax)}℃ · 参考 ${avg(d=>ref.days[d].max)}℃`],
-    ['当日最低温 平均差值（温度计 − 参考）', sg(avg(d => days[d].tmin - ref.days[d].min)) + '℃', `温度计 ${avg(d=>days[d].tmin)}℃ · 参考 ${avg(d=>ref.days[d].min)}℃`],
-    ['温度计最高温高于参考的天数', ds.filter(d => days[d].tmax > ref.days[d].max).length + ' 天', `共 ${ds.length} 天可比`]
+    [`当日${T.max} 平均差值（${T.dev} − 参考）`, sg(avg(d => days[d][mx] - ref.days[d].max)) + u, `${T.dev} ${avg(d=>days[d][mx])}${u} · 参考 ${avg(d=>ref.days[d].max)}${u}`],
+    [`当日${T.min} 平均差值（${T.dev} − 参考）`, sg(avg(d => days[d][mn] - ref.days[d].min)) + u, `${T.dev} ${avg(d=>days[d][mn])}${u} · 参考 ${avg(d=>ref.days[d].min)}${u}`],
+    [`${T.dev}${T.max}高于参考的天数`, ds.filter(d => days[d][mx] > ref.days[d].max).length + ' 天', `共 ${ds.length} 天可比`]
   ];
   el.innerHTML = items.map(([k,v,s]) => `<div class="stat"><div class="k">${k}</div><div class="v">${v}<small>${s}</small></div></div>`).join('');
   el.hidden = false;
@@ -1009,7 +1030,8 @@ async function importFiles(fileList){
   renderAll();
 }
 
-setupRefControls();
+setupRefControls('t');
+setupRefControls('h');
 
 (function setupDrop(){
   const drop = document.getElementById('drop'), input = document.getElementById('file-input');
@@ -1058,7 +1080,7 @@ setupRefControls();
   citySel.onchange = () => { apply(find(citySel.value), true); refresh(); };
   function refresh(){
     if (TILE_REDRAW) TILE_REDRAW();
-    if (REF.redraw) REF.redraw();
+    redrawRefs();
     const s = document.getElementById('summary');
     s.textContent = s.textContent.replace(/位置 [^·]*/, `位置 ${CONFIG.locationName} `).trim();
   }
