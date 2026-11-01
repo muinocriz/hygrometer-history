@@ -103,7 +103,7 @@
       <div class="controls" id="ctl-temp"></div>
     </div>
     <div id="chart-temp" class="chart"></div>
-    <p class="note">每小时平均值 = (该小时最低 + 最高) / 2。虚线表示缺失数据的区段，两端用实测值连接。</p>
+    <p class="note">月视图：半透明柱为当日最低～最高，折线为每小时最高 / 最低值；数据不足的日期不画柱子，以灰底标出。日、年视图另含平均值，每小时平均值 = (该小时最低 + 最高) / 2。虚线表示缺失数据的区段，两端用实测值连接。</p>
   </section>
 
   <section class="card">
@@ -389,11 +389,11 @@ function linePoints(field, mode, key){
 }
 
 // 实线 + 缺口虚线（同名，图例联动）
-function lineWithGaps(name, color, data, z){
+function lineWithGaps(name, color, data, z, {symbols=true, width=2} = {}){
   const solid = {
     id:`main-${name}`, name, type:'line', z, data:data.map(([x,y]) => [x, y==null ? '-' : y]),
-    connectNulls:false, showSymbol:true, symbol:'circle', symbolSize:5,
-    lineStyle:{width:2, color}, itemStyle:{color, borderColor:BG, borderWidth:1},
+    connectNulls:false, showSymbol:symbols, symbol:'circle', symbolSize:5,
+    lineStyle:{width, color}, itemStyle:{color, borderColor:BG, borderWidth:1},
     emphasis:{focus:'none', scale:1.6}
   };
   const gap = [];
@@ -419,6 +419,7 @@ function setupLineChart(chartId, ctlId, field, unit){
     modes:[{key:'day',label:'日'},{key:'month',label:'月'},{key:'year',label:'年'}],
     initMode:'month', options:periodOptions,
     onChange(mode, key){
+      if (mode === 'month') return drawMonth(key);
       const P = linePoints(field, mode, key);
       const series = [
         ...lineWithGaps(names.max, LINE_COLORS.max, P.pts.max, 5),
@@ -459,9 +460,73 @@ function setupLineChart(chartId, ctlId, field, unit){
           splitLine:{lineStyle:{color:GRID}}, axisLine:{show:false}},
         graphic: anyData ? [] : [{type:'text', left:'center', top:'middle', style:{text:'该时段无数据', fill:AXIS, fontSize:14}}],
         series
-      }, {replaceMerge:['series','graphic']});
+      }, {replaceMerge:['series','graphic','xAxis']});
     }
   });
+
+  // 月视图：每天一根半透明区间柱（当日最低～最高）+ 每小时最高 / 最低折线
+  function drawMonth(key){
+    const [y,m] = key.split('-').map(Number), N = daysInMonth(y,m);
+    const hx = (d,h) => d - 0.5 + (h + 0.5)/24;          // 第 d 天占 [d-0.5, d+0.5]
+    const maxPts = [], minPts = [], days = {};
+    for (let d=1; d<=N; d++){
+      const date = `${key}-${pad(d)}`, arr = BY_DATE[date], s = dayStats(date);
+      days[d] = s;
+      for (let h=0; h<24; h++){
+        const r = arr && arr[h];
+        maxPts.push([hx(d,h), r ? r[field+'max'] : null]);
+        minPts.push([hx(d,h), r ? r[field+'min'] : null]);
+      }
+    }
+    const bars = Object.entries(days).filter(([,s]) => s.valid).map(([d,s]) => [+d, s[field+'min'], s[field+'max']]);
+    const bad = Object.entries(days).filter(([,s]) => !s.valid);
+    const rangeName = '当日范围';
+    const series = [
+      {id:'range', name:rangeName, type:'custom', data:bars, encode:{x:0, y:[1,2]}, z:1, silent:true, tooltip:{show:false},
+        itemStyle:{color:'rgba(170,185,215,.35)'},
+        renderItem(params, api){
+          const d = api.value(0), p0 = api.coord([d-0.42, api.value(2)]), p1 = api.coord([d+0.42, api.value(1)]);
+          return {type:'rect', shape:{x:p0[0], y:Math.min(p0[1],p1[1]), width:p1[0]-p0[0], height:Math.max(1, Math.abs(p1[1]-p0[1])), r:3},
+            style:{fill:'rgba(170,185,215,.13)'}};
+        }},
+      ...lineWithGaps(names.max, LINE_COLORS.max, maxPts, 5, {symbols:false, width:1.5}),
+      ...lineWithGaps(names.min, LINE_COLORS.min, minPts, 5, {symbols:false, width:1.5})
+    ];
+    series[1].markArea = {silent:true, itemStyle:{color:'rgba(150,160,185,.10)'},
+      label:{color:AXIS, fontSize:11, position:'insideTop'},
+      data: bad.map(([d,s]) => [{xAxis:+d-0.5, name: s.count ? `数据不足\n${s.count}h` : '无数据'}, {xAxis:+d+0.5}])};
+    const anyData = maxPts.some(p => p[1] != null);
+    chart.setOption({
+      backgroundColor:'transparent', animationDuration:400,
+      legend:{top:0, textStyle:{color:INK2}, itemWidth:18, itemHeight:3, icon:'roundRect',
+        data:[names.max, names.min, {name:rangeName, itemHeight:10, itemStyle:{color:'rgba(170,185,215,.35)'}}]},
+      grid:{left:48, right:20, top:40, bottom:36},
+      tooltip:{trigger:'axis', backgroundColor:'#0e1524', borderColor:GRID, textStyle:{color:INK, fontSize:12},
+        axisPointer:{type:'line', lineStyle:{color:AXIS, type:'dashed'}},
+        formatter(ps){
+          const x = ps[0].axisValue, d = Math.round(x);
+          const h = Math.min(23, Math.max(0, Math.floor((x - (d - 0.5)) * 24)));
+          const s = days[d]; if (!s) return '';
+          const r = BY_DATE[`${key}-${pad(d)}`]?.[h];
+          let html = `<b>${m}月${d}日 ${pad(h)}:00–${pad(h+1)}:00</b>`;
+          if (r){
+            html += `<br>${ps.find(p=>p.seriesId===`main-${names.max}`)?.marker || ''}${names.max}　<b>${r[field+'max']}${unit}</b>`;
+            html += `<br>${ps.find(p=>p.seriesId===`main-${names.min}`)?.marker || ''}${names.min}　<b>${r[field+'min']}${unit}</b>`;
+          } else html += `<br><span style="color:${AXIS}">该小时无数据</span>`;
+          if (s.valid) html += `<br><span style="color:${INK2}">当日 ${s[field+'min']}～${s[field+'max']}${unit}</span>`;
+          else html += `<br><span style="color:${AXIS}">${s.count ? `当日仅 ${s.count} 小时数据，不显示区间` : '当日无数据'}</span>`;
+          if (s.valid && s.count < 24) html += `<br><span style="color:${AXIS}">当日缺 ${24-s.count} 小时</span>`;
+          return html;
+        }},
+      xAxis:{type:'value', min:0.5, max:N+0.5,
+        axisLine:{lineStyle:{color:GRID}}, axisTick:{show:false}, splitLine:{show:false},
+        axisLabel:{color:AXIS, customValues:[1, ...Array.from({length:Math.floor(N/5)}, (_,i) => (i+1)*5)], formatter:v => `${v}日`}},
+      yAxis:{type:'value', scale:true, axisLabel:{color:AXIS, formatter:`{value}${unit}`},
+        splitLine:{lineStyle:{color:GRID}}, axisLine:{show:false}},
+      graphic: anyData ? [] : [{type:'text', left:'center', top:'middle', style:{text:'该时段无数据', fill:AXIS, fontSize:14}}],
+      series
+    }, {replaceMerge:['series','graphic','xAxis']});
+  }
 }
 
 
