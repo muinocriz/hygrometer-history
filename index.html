@@ -67,11 +67,12 @@
   .ref-bar label.off{opacity:.45;cursor:not-allowed}
   .ref-bar input{accent-color:#8fa6cc;margin:0}
   .ref-bar .sw{display:inline-block;width:14px;height:12px;border-radius:2px;background:rgba(242,184,75,.18);border:1.5px solid #f2b84b}
+  .ref-bar .sw.dev{background:rgba(170,185,215,.35);border-color:rgba(170,185,215,.35)}
   .ref-bar .src{color:var(--muted);font-size:12px}
   .ref-bar .file{font-size:12px;color:var(--ink2)}
   .ref-bar .link{background:none;border:0;color:#8fa6cc;cursor:pointer;font-size:12px;padding:0}
   .stats{display:flex;gap:12px;flex-wrap:wrap;margin-top:6px}
-  .stat{flex:1 1 200px;border:1px solid var(--line);border-radius:10px;padding:10px 12px}
+  .stat{flex:1 1 220px;border:1px solid var(--line);border-radius:10px;padding:10px 12px}
   .stat .k{font-size:12px;color:var(--muted)}
   .stat .v{font-size:20px;font-weight:700;margin-top:2px}
   .stat .v small{font-size:12px;font-weight:400;color:var(--ink2);margin-left:4px}
@@ -117,6 +118,7 @@
       <div class="controls" id="ctl-temp"></div>
     </div>
     <div class="ref-bar" id="ref-bar-t" hidden>
+      <label><input type="checkbox" id="dev-on-t" checked><span class="sw dev"></span>显示区间柱</label>
       <label><input type="checkbox" id="ref-on-t" checked><span class="sw"></span>显示参考气温区间柱</label>
       <span class="src" id="ref-src-t"></span>
       <button class="btn" id="ref-import-t" type="button">导入气象站数据</button>
@@ -143,6 +145,7 @@
       <div class="controls" id="ctl-hum"></div>
     </div>
     <div class="ref-bar" id="ref-bar-h" hidden>
+      <label><input type="checkbox" id="dev-on-h" checked><span class="sw dev"></span>显示区间柱</label>
       <label><input type="checkbox" id="ref-on-h" checked><span class="sw"></span>显示参考湿度区间柱</label>
       <span class="src" id="ref-src-h"></span>
       <button class="btn" id="ref-import-h" type="button">导入气象站数据</button>
@@ -543,7 +546,7 @@ function setupRefControls(field){
     renderRefFiles(field);
     if (REF.redraw[field]) REF.redraw[field]();
   };
-  $('ref-on').onchange = () => { if (REF.redraw[field]) REF.redraw[field](); };
+  $('ref-on').onchange = $('dev-on').onchange = () => { if (REF.redraw[field]) REF.redraw[field](); };
 }
 function renderRefFiles(field){
   const el = document.getElementById(`ref-files-${field}`), files = REF.files[field];
@@ -643,8 +646,9 @@ function setupLineChart(chartId, ctlId, field, unit){
       else srcEl.textContent = '来源：' + [ref.nImp && `${REF_SRC_NAME.imp} ${ref.nImp} 天`, ref.nOm && `${REF_SRC_NAME.om}（${CONFIG.locationName}）${ref.nOm} 天`].filter(Boolean).join(' + ');
       renderRefStats(field, days, has ? ref : null);
     }
+    const showDev = document.getElementById(`dev-on-${field}`).checked;
     const series = [
-      {id:'range', name:rangeName, type:'custom', data:bars, encode:{x:0, y:[1,2]}, z:1, silent:true, tooltip:{show:false},
+      {id:'range', name:rangeName, type:'custom', data:showDev ? bars : [], encode:{x:0, y:[1,2]}, z:1, silent:true, tooltip:{show:false},
         itemStyle:{color:'rgba(170,185,215,.35)'},
         renderItem(params, api){
           const d = api.value(0), p0 = api.coord([d-0.42, api.value(2)]), p1 = api.coord([d+0.42, api.value(1)]);
@@ -669,7 +673,7 @@ function setupLineChart(chartId, ctlId, field, unit){
     chart.setOption({
       backgroundColor:'transparent', animationDuration:400,
       legend:{top:0, textStyle:{color:INK2}, itemWidth:18, itemHeight:3, icon:'roundRect',
-        data:[names.max, names.min, {name:rangeName, itemHeight:10, itemStyle:{color:'rgba(170,185,215,.35)'}},
+        data:[names.max, names.min, ...(showDev ? [{name:rangeName, itemHeight:10, itemStyle:{color:'rgba(170,185,215,.35)'}}] : []),
           ...(refData.length ? [{name:refName, itemHeight:10, itemStyle:{color:'rgba(242,184,75,.3)', borderColor:REF_COLOR, borderWidth:1}}] : [])]},
       grid:{left:48, right:20, top:40, bottom:36},
       tooltip:{trigger:'axis', backgroundColor:'#0e1524', borderColor:GRID, textStyle:{color:INK, fontSize:12},
@@ -719,7 +723,8 @@ function renderRefStats(field, days, ref){
   const items = [
     [`当日${T.max} 平均差值（${T.dev} − 参考）`, sg(avg(d => days[d][mx] - ref.days[d].max)) + u, `${T.dev} ${avg(d=>days[d][mx])}${u} · 参考 ${avg(d=>ref.days[d].max)}${u}`],
     [`当日${T.min} 平均差值（${T.dev} − 参考）`, sg(avg(d => days[d][mn] - ref.days[d].min)) + u, `${T.dev} ${avg(d=>days[d][mn])}${u} · 参考 ${avg(d=>ref.days[d].min)}${u}`],
-    [`${T.dev}${T.max}高于参考的天数`, ds.filter(d => days[d][mx] > ref.days[d].max).length + ' 天', `共 ${ds.length} 天可比`]
+    [`${T.dev}${T.max}高于参考的天数`, ds.filter(d => days[d][mx] > ref.days[d].max).length + ' 天', `共 ${ds.length} 天可比`],
+    [`${T.dev}${T.min}低于参考的天数`, ds.filter(d => days[d][mn] < ref.days[d].min).length + ' 天', `共 ${ds.length} 天可比`]
   ];
   el.innerHTML = items.map(([k,v,s]) => `<div class="stat"><div class="k">${k}</div><div class="v">${v}<small>${s}</small></div></div>`).join('');
   el.hidden = false;
