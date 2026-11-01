@@ -38,6 +38,24 @@
   .checks label{display:flex;align-items:center;gap:5px;font-size:13px;color:var(--ink2);cursor:pointer;user-select:none}
   .checks input{accent-color:#8fa6cc;margin:0;cursor:pointer}
   .checks i{display:inline-block;width:14px;height:3px;border-radius:2px}
+  .drop{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;padding:22px 16px;border:1.5px dashed #3a4868;border-radius:10px;cursor:pointer;text-align:center;transition:background .15s,border-color .15s;outline:none}
+  .drop:hover,.drop:focus-visible{border-color:#5d73a0;background:rgba(255,255,255,.02)}
+  .drop.over{border-color:var(--accent);background:rgba(242,184,75,.07)}
+  .drop svg{width:30px;height:30px;stroke:var(--ink2)}
+  .drop.over svg{stroke:var(--accent)}
+  .drop-title{font-size:15px;font-weight:600}
+  .drop-sub{font-size:12px;color:var(--muted);line-height:1.6}
+  .import-status{margin-top:12px;font-size:13px;color:var(--ink2)}
+  .import-status ul{list-style:none;margin:0 0 8px;padding:0;display:flex;flex-direction:column;gap:4px}
+  .import-status li{display:flex;gap:10px;align-items:baseline;flex-wrap:wrap}
+  .import-status li b{color:var(--ink);font-weight:600;word-break:break-all}
+  .import-status li .bad{color:#ef7b5f}
+  .import-bar{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+  .import-bar label{display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none}
+  .import-bar input{accent-color:#8fa6cc;margin:0}
+  .btn{background:#1d2840;color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:5px 12px;font-size:13px;cursor:pointer}
+  .btn:hover{border-color:#5d73a0}
+  .empty{padding:60px 20px;text-align:center;color:var(--muted);font-size:14px}
   .note{color:var(--muted);font-size:12px;margin:8px 2px 0;line-height:1.6}
 </style>
 </head>
@@ -47,6 +65,19 @@
     <h1>温湿度计历史数据</h1>
     <p id="summary"></p>
   </header>
+
+  <section class="card" id="import-card">
+    <div class="drop" id="drop" tabindex="0" role="button" aria-label="导入本地温湿度计数据文件">
+      <input type="file" id="file-input" multiple accept=".csv,.txt,.tsv,text/csv,text/plain" hidden>
+      <svg viewBox="0 0 24 24" fill="none" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15V4"/><path d="M7.5 8.5 12 4l4.5 4.5"/><path d="M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/></svg>
+      <div class="drop-title">导入本地温湿度计数据：点击选择文件，或把文件拖到这里</div>
+      <div class="drop-sub">支持一次选择多个 CSV / TXT 文件 · 同一小时内的多条记录会合并：最高温湿度取最大值，最低温湿度取最小值<br>文件只在你的浏览器里读取，不会上传到任何服务器；刷新页面后导入的数据即清除</div>
+    </div>
+    <div class="import-status" id="import-status" hidden></div>
+  </section>
+
+  <div id="no-data" class="card empty" hidden>暂无数据，请先导入温湿度计导出的文件。</div>
+  <div id="charts">
 
   <section class="card">
     <div class="card-head">
@@ -101,6 +132,7 @@
     <div class="legend-wrap"><div class="legend" id="legend-dew"></div></div>
     <p class="note">露点由每小时平均温度与平均湿度经 Magnus 公式计算（a = 17.62, b = 243.12℃）。每天各等级占比 = 该等级小时数 / 当天有效小时数。折线为“闷热及以上”（露点 ≥ 18℃）的占比。</p>
   </section>
+  </div>
 </div>
 
 <script>
@@ -145,33 +177,76 @@ function dewPoint(T, RH){
 }
 function band(bands, v){ return bands.find(b => v < b.max); }
 
+// 解析一个文件的文本，返回原始行（未按小时合并）
+const DATE_RE = /^\s*"?(\d{4})[-\/.年](\d{1,2})[-\/.月](\d{1,2})日?\s*[T ]?\s*(\d{1,2}):(\d{2})/;
 function parseCSV(text){
-  const out = [];
-  text.split(/\r?\n/).forEach(line => {
-    const p = line.split(/[,\t]/);
-    const m = p[0] && p[0].trim().match(/^(\d{4})[-\/](\d{1,2})[-\/](\d{1,2})\s+(\d{1,2}):(\d{2})/);
-    if (!m || p.length < 5) return;
-    const tmin=+p[1], hmin=+p[2], tmax=+p[3], hmax=+p[4];
-    if ([tmin,hmin,tmax,hmax].some(isNaN)) return;
+  const rows = []; let skipped = 0;
+  const lines = text.split(/\r?\n/).filter(l => l.trim());
+  // 默认列序：时间, 最低温度, 最低湿度, 最高温度, 最高湿度；有表头时按列名识别
+  let col = {tmin:1, hmin:2, tmax:3, hmax:4};
+  const split = l => l.split(/[,\t;]/).map(s => s.trim().replace(/^"|"$/g, ''));
+  for (const line of lines){
+    const p = split(line);
+    const m = p[0].match(DATE_RE);
+    if (!m){
+      const idx = kw => p.findIndex(s => kw.every(k => s.includes(k)));
+      const c = {tmin:idx(['最低','温']), hmin:idx(['最低','湿']), tmax:idx(['最高','温']), hmax:idx(['最高','湿'])};
+      if (Object.values(c).every(i => i > 0)) col = c;
+      else {
+        const t1 = p.findIndex((s,i) => i>0 && s.includes('温')), h1 = p.findIndex((s,i) => i>0 && s.includes('湿'));
+        if (t1 > 0 && h1 > 0) col = {tmin:t1, tmax:t1, hmin:h1, hmax:h1};   // 只有单一温度/湿度列
+        else if (rows.length) skipped++;
+      }
+      continue;
+    }
+    const tmin=parseFloat(p[col.tmin]), hmin=parseFloat(p[col.hmin]), tmax=parseFloat(p[col.tmax]), hmax=parseFloat(p[col.hmax]);
     const y=+m[1], mo=+m[2], d=+m[3], h=+m[4];
-    const tavg=(tmin+tmax)/2, havg=(hmin+hmax)/2;
-    out.push({date:`${y}-${pad(mo)}-${pad(d)}`, y, m:mo, d, h, tmin, tmax, hmin, hmax, tavg, havg, td:dewPoint(tavg, havg)});
-  });
-  return out;
+    if ([tmin,hmin,tmax,hmax].some(isNaN) || mo<1 || mo>12 || d<1 || d>31 || h>23){ skipped++; continue; }
+    rows.push({date:`${y}-${pad(mo)}-${pad(d)}`, y, m:mo, d, h, tmin, tmax, hmin, hmax});
+  }
+  return {rows, skipped};
 }
 
-let csvText;
+// 读取本地文件：优先 UTF-8，失败则按 GB18030（Excel 中文导出常见）
+async function readFileText(file){
+  const buf = await file.arrayBuffer();
+  try { return new TextDecoder('utf-8', {fatal:true}).decode(buf); }
+  catch { return new TextDecoder('gb18030').decode(buf); }
+}
+
+const SOURCE = {base:[], imported:[], useBase:true};   // imported: [{name, rows, skipped}]
+let RECORDS = [], BY_DATE = {}, DATES = [], MONTHS = [], YEARS = [], MERGED_HOURS = 0;
+
+// 按“日期+小时”合并：最高取最大，最低取最小
+function rebuildData(){
+  const all = [...(SOURCE.useBase ? SOURCE.base : []), ...SOURCE.imported.flatMap(f => f.rows)];
+  const map = new Map(); MERGED_HOURS = 0;
+  all.forEach(r => {
+    const k = `${r.date} ${r.h}`, o = map.get(k);
+    if (!o){ map.set(k, {...r, n:1}); return; }
+    if (o.n++ === 1) MERGED_HOURS++;
+    o.tmin = Math.min(o.tmin, r.tmin); o.hmin = Math.min(o.hmin, r.hmin);
+    o.tmax = Math.max(o.tmax, r.tmax); o.hmax = Math.max(o.hmax, r.hmax);
+  });
+  RECORDS = [...map.values()].map(r => {
+    const tavg = (r.tmin+r.tmax)/2, havg = (r.hmin+r.hmax)/2;
+    return {...r, tavg, havg, td:dewPoint(tavg, havg)};
+  });
+  BY_DATE = {};
+  RECORDS.forEach(r => { (BY_DATE[r.date] ||= Array(24).fill(null))[r.h] = r; });
+  DATES = Object.keys(BY_DATE).sort();
+  MONTHS = [...new Set(DATES.map(d=>d.slice(0,7)))];
+  YEARS  = [...new Set(DATES.map(d=>d.slice(0,4)))];
+}
+
+let baseError = null;
 try {
   const res = await fetch(CONFIG.dataUrl, {cache:'no-cache'});
   if (!res.ok) throw new Error(res.status + ' ' + res.statusText);
-  csvText = await res.text();
+  SOURCE.base = parseCSV(await res.text()).rows;
 } catch (e) {
-  document.getElementById('summary').textContent = `数据加载失败：${CONFIG.dataUrl}（${e.message}）。本地预览请通过 HTTP 服务打开，例如 python -m http.server`;
-  return;
+  baseError = e.message;
 }
-const RECORDS = parseCSV(csvText);
-const BY_DATE = {};   // date -> Array(24) of record|null
-RECORDS.forEach(r => { (BY_DATE[r.date] ||= Array(24).fill(null))[r.h] = r; });
 
 function dayStats(date){
   const hrs = (BY_DATE[date]||[]).filter(Boolean);
@@ -185,12 +260,6 @@ function dayStats(date){
   return s;
 }
 const daysInMonth = (y,m) => new Date(y, m, 0).getDate();
-const DATES = Object.keys(BY_DATE).sort();
-const MONTHS = [...new Set(DATES.map(d=>d.slice(0,7)))];
-const YEARS  = [...new Set(DATES.map(d=>d.slice(0,4)))];
-
-document.getElementById('summary').textContent =
-  `数据范围 ${DATES[0]} ～ ${DATES[DATES.length-1]} · 共 ${RECORDS.length} 条每小时记录 · 位置 ${CONFIG.locationName}`;
 
 /* ================= 日出日落（NOAA 近似算法） ================= */
 function sunTimes(y, m, d, zenithDeg){
@@ -206,6 +275,15 @@ function sunTimes(y, m, d, zenithDeg){
   return {rise:rise/60, set:set/60};
 }
 const fmtHM = h => `${pad(Math.floor(h))}:${pad(Math.round((h%1)*60)%60)}`;
+
+/* ================= 图表实例（复用，统一 resize） ================= */
+const CHARTS = new Set();
+function getChart(el){
+  let c = echarts.getInstanceByDom(el);
+  if (!c){ c = echarts.init(el); CHARTS.add(c); }
+  return c;
+}
+window.addEventListener('resize', () => CHARTS.forEach(c => c.resize()));
 
 /* ================= 通用控件 ================= */
 function buildControls(el, {modes, initMode, options, onChange}){
@@ -316,8 +394,7 @@ function lineWithGaps(name, color, data, z){
 }
 
 function setupLineChart(chartId, ctlId, field, unit){
-  const chart = echarts.init(document.getElementById(chartId));
-  window.addEventListener('resize', () => chart.resize());
+  const chart = getChart(document.getElementById(chartId));
   const names = field==='t' ? {max:'最高温度', avg:'平均温度', min:'最低温度'} : {max:'最高湿度', avg:'平均湿度', min:'最低湿度'};
   buildControls(document.getElementById(ctlId), {
     modes:[{key:'day',label:'日'},{key:'month',label:'月'},{key:'year',label:'年'}],
@@ -371,8 +448,7 @@ function setupLineChart(chartId, ctlId, field, unit){
 
 /* ================= 月内日变化叠加（范围带 + 平均线） ================= */
 function setupOverlay(chartId, ctlId, titleId, field, unit){
-  const chart = echarts.init(document.getElementById(chartId));
-  window.addEventListener('resize', () => chart.resize());
+  const chart = getChart(document.getElementById(chartId));
   const label = field==='t' ? '温度' : '湿度';
   const KINDS = [
     {k:'max', name:`最高${label}`, color:LINE_COLORS.max},
@@ -473,8 +549,7 @@ function renderLegend(elId, bands, darkText){
 
 /* ================= 图 3：每小时平均温度瓦片 ================= */
 function setupTile(){
-  const chart = echarts.init(document.getElementById('chart-tile'));
-  window.addEventListener('resize', () => chart.resize());
+  const chart = getChart(document.getElementById('chart-tile'));
   renderLegend('legend-temp', TEMP_BANDS, false);
   buildControls(document.getElementById('ctl-tile'), {
     options:() => periodOptions('month'),
@@ -549,8 +624,7 @@ function setupTile(){
 
 /* ================= 图 4：露点舒适等级占比 ================= */
 function setupDew(){
-  const chart = echarts.init(document.getElementById('chart-dew'));
-  window.addEventListener('resize', () => chart.resize());
+  const chart = getChart(document.getElementById('chart-dew'));
   renderLegend('legend-dew', DEW_BANDS, true);
   buildControls(document.getElementById('ctl-dew'), {
     options:() => periodOptions('month'),
@@ -618,12 +692,78 @@ function setupDew(){
   });
 }
 
-setupLineChart('chart-temp', 'ctl-temp', 't', '℃');
-setupLineChart('chart-hum',  'ctl-hum',  'h', '%');
-setupOverlay('chart-ov-temp', 'ctl-ov-temp', 'title-ov-temp', 't', '℃');
-setupOverlay('chart-ov-hum', 'ctl-ov-hum', 'title-ov-hum', 'h', '%');
-setupTile();
-setupDew();
+/* ================= 渲染与导入 ================= */
+function renderAll(){
+  rebuildData();
+  const imp = SOURCE.imported, nBase = SOURCE.useBase ? SOURCE.base.length : 0;
+  const has = DATES.length > 0;
+  document.getElementById('charts').hidden = !has;
+  document.getElementById('no-data').hidden = has;
+  const parts = [];
+  if (has) parts.push(`数据范围 ${DATES[0]} ～ ${DATES[DATES.length-1]}`, `共 ${RECORDS.length} 个小时的记录`);
+  if (imp.length) parts.push(SOURCE.base.length ? (SOURCE.useBase ? `站点数据 ${nBase} 条 + 导入 ${imp.length} 个文件` : `仅显示导入的 ${imp.length} 个文件`) : `导入 ${imp.length} 个文件`);
+  parts.push(`位置 ${CONFIG.locationName}`);
+  if (baseError && !imp.length) parts.push(`站点数据加载失败（${baseError}），可直接导入本地文件；或通过 HTTP 服务打开，例如 python -m http.server`);
+  document.getElementById('summary').textContent = parts.join(' · ');
+  renderImportStatus();
+  if (!has) return;
+  setupLineChart('chart-temp', 'ctl-temp', 't', '℃');
+  setupLineChart('chart-hum',  'ctl-hum',  'h', '%');
+  setupOverlay('chart-ov-temp', 'ctl-ov-temp', 'title-ov-temp', 't', '℃');
+  setupOverlay('chart-ov-hum', 'ctl-ov-hum', 'title-ov-hum', 'h', '%');
+  setupTile();
+  setupDew();
+  CHARTS.forEach(c => c.resize());
+}
+
+function esc(s){ return String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+function renderImportStatus(){
+  const el = document.getElementById('import-status');
+  const imp = SOURCE.imported;
+  el.hidden = !imp.length;
+  if (!imp.length){ el.innerHTML = ''; return; }
+  const items = imp.map(f => {
+    if (!f.rows.length) return `<li><b>${esc(f.name)}</b><span class="bad">未识别到有效数据，请检查文件格式</span></li>`;
+    const ds = f.rows.map(r => r.date).sort();
+    return `<li><b>${esc(f.name)}</b><span>${f.rows.length} 条记录 · ${ds[0]} ～ ${ds[ds.length-1]}</span>${f.skipped ? `<span class="bad">跳过 ${f.skipped} 行无法解析</span>` : ''}</li>`;
+  }).join('');
+  el.innerHTML = `<ul>${items}</ul>
+    <div class="import-bar">
+      <span>同一小时有多条记录、已合并的小时数：${MERGED_HOURS}</span>
+      ${SOURCE.base.length ? `<label><input type="checkbox" id="use-base" ${SOURCE.useBase ? 'checked' : ''}>同时包含站点自带数据</label>` : ''}
+      <button class="btn" id="clear-import">清除导入的数据</button>
+    </div>`;
+  const ub = document.getElementById('use-base');
+  if (ub) ub.onchange = e => { SOURCE.useBase = e.target.checked; renderAll(); };
+  document.getElementById('clear-import').onclick = () => { SOURCE.imported = []; SOURCE.useBase = true; renderAll(); };
+}
+
+async function importFiles(fileList){
+  const files = [...fileList];
+  if (!files.length) return;
+  for (const f of files){
+    try { SOURCE.imported.push({name:f.name, ...parseCSV(await readFileText(f))}); }
+    catch (e) { SOURCE.imported.push({name:f.name, rows:[], skipped:0}); }
+  }
+  renderAll();
+}
+
+(function setupDrop(){
+  const drop = document.getElementById('drop'), input = document.getElementById('file-input');
+  drop.onclick = () => input.click();
+  drop.onkeydown = e => { if (e.key === 'Enter' || e.key === ' '){ e.preventDefault(); input.click(); } };
+  input.onchange = () => { importFiles(input.files); input.value = ''; };
+  let depth = 0;
+  drop.addEventListener('dragenter', e => { e.preventDefault(); depth++; drop.classList.add('over'); });
+  drop.addEventListener('dragleave', () => { if (--depth <= 0){ depth = 0; drop.classList.remove('over'); } });
+  drop.addEventListener('dragover', e => { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; });
+  drop.addEventListener('drop', e => { e.preventDefault(); depth = 0; drop.classList.remove('over'); importFiles(e.dataTransfer.files); });
+  // 防止文件拖到区域外时浏览器直接打开文件
+  window.addEventListener('dragover', e => e.preventDefault());
+  window.addEventListener('drop', e => e.preventDefault());
+})();
+
+renderAll();
 })();
 </script>
 </body>
