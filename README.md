@@ -138,8 +138,8 @@ python tools/mijia_history.py auto -o data/history.csv
 
 页面顶部可按“省 → 地级行政区”选择计算日出日落的位置，默认上海市。目前仅支持列表中的中国大陆地级行政区（含省直辖县级行政单位，不含港澳台），后续会逐步更新。
 
-- 为保证日出日落的精确度，只收录面积跨度不大的区域；跨度较大的地区暂未收录
-- 坐标取各行政区的几何中心
+- 为保证日出日落的精确度，只收录面积跨度不大的区域；跨度较大的地区暂未收录，省会城市与直辖市全部保留
+- 坐标一般取各行政区的几何中心；哈尔滨市、重庆市辖区较大，改用市政府驻地坐标
 - 时间统一按北京时间（东八区）计算
 - 选择后网址会带上 `?city=区划码`，分享链接即可打开同一位置；也可以手写 `?city=乌鲁木齐市`
 - 城市坐标数据：[cn-atlas](https://github.com/BarbarossaWang/cn-atlas)（基于 [shengshixian.com](https://github.com/ruiduobao/shengshixian.com) 2023 版行政区划），生成于 `data/cities.js`
