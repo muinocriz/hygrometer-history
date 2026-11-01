@@ -24,6 +24,7 @@
 感谢 [@zhoulin12138](https://github.com/zhoulin12138) 为项目提供设备协助。
 
 - `index.html`：页面与图表逻辑（ECharts，CDN 引入）
+- `data/cities.js`：中国大陆地级行政区坐标，用于日出日落计算
 - `data/history.csv`：原始数据，每行一小时：`时间, 最低温度℃, 最低湿度%, 最高温度℃, 最高湿度%`
 - `tools/mijia_history.py`：从温湿度计读出历史数据、导出为上面格式 CSV 的脚本
 
@@ -133,6 +134,15 @@ python tools/mijia_history.py auto -o data/history.csv
 - 有表头时按列名（最低温度 / 最低湿度 / 最高温度 / 最高湿度）识别列；支持逗号或 Tab 分隔、`2026-11-01` / `2026/11/1` 日期格式、UTF-8 或 GBK 编码
 - 刷新页面后导入的数据即清除
 
+## 日出日落位置
+
+页面顶部可按“省 → 地级行政区”选择计算日出日落的位置，默认上海市。目前仅支持列表中的中国大陆地级行政区（含省直辖县级行政单位，不含港澳台），共 369 个，后续会逐步更新。
+
+- 坐标取各行政区的几何中心（三沙市因辖区分散，改用政府驻地永兴岛坐标），与政府驻地的日出时间相差一般在 6 分钟以内
+- 时间统一按北京时间（东八区）计算
+- 选择后网址会带上 `?city=区划码`，分享链接即可打开同一位置；也可以手写 `?city=乌鲁木齐市`
+- 城市坐标数据：[cn-atlas](https://github.com/BarbarossaWang/cn-atlas)（基于 [shengshixian.com](https://github.com/ruiduobao/shengshixian.com) 2023 版行政区划），生成于 `data/cities.js`
+
 ## 本地预览
 
 页面通过 `fetch` 读取 CSV，不能直接双击打开，需要起一个本地服务：
@@ -146,5 +156,5 @@ python -m http.server
 
 `index.html` 顶部的 `CONFIG`：
 
-- `lat` / `lon` / `tz`：用于计算日出日落阴影的位置（默认上海）
+- `locationName` / `lat` / `lon` / `tz`：默认的日出日落位置（上海市），页面上可切换
 - `minHoursPerDay`：一天有效小时数低于此值视为“数据不足”（默认 12）

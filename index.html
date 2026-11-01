@@ -13,7 +13,13 @@
   *{box-sizing:border-box}
   body{margin:0;background:var(--bg);color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei","Segoe UI",sans-serif;}
   .wrap{max-width:1240px;margin:0 auto;padding:28px 20px 60px}
+  header{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap}
   header h1{margin:0 0 6px;font-size:24px;font-weight:700}
+  .gh{display:inline-flex;align-items:center;gap:7px;color:var(--ink2);text-decoration:none;font-size:13px;border:1px solid var(--line);border-radius:8px;padding:6px 12px;white-space:nowrap}
+  .gh:hover{color:var(--ink);border-color:#5d73a0}
+  .gh svg{width:16px;height:16px;fill:currentColor}
+  .loc{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:12px;font-size:13px;color:var(--ink2)}
+  .loc .hint{color:var(--muted);font-size:12px}
   header p{margin:0;color:var(--ink2);font-size:13px}
   .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:18px 18px 12px;margin-top:20px}
   .card-head{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px;margin-bottom:6px}
@@ -62,8 +68,20 @@
 <body>
 <div class="wrap">
   <header>
-    <h1>温湿度计历史数据</h1>
-    <p id="summary"></p>
+    <div>
+      <h1>温湿度计历史数据</h1>
+      <p id="summary"></p>
+      <div class="loc">
+        <span>日出日落计算位置</span>
+        <select id="loc-prov" aria-label="省级行政区"></select>
+        <select id="loc-city" aria-label="地级行政区"></select>
+        <span class="hint">目前仅支持列表中的中国大陆地级行政区（不含港澳台），后续会逐步更新</span>
+      </div>
+    </div>
+    <a class="gh" href="https://github.com/muinocriz/hygrometer-history" target="_blank" rel="noopener" title="在 GitHub 查看项目">
+      <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+      GitHub 项目主页
+    </a>
   </header>
 
   <section class="card" id="import-card">
@@ -135,12 +153,13 @@
   </div>
 </div>
 
+<script src="data/cities.js"></script>
 <script>
 (async () => {
 /* ================= 配置 ================= */
 const CONFIG = {
-  locationName: '上海',
-  lat: 31.23, lon: 121.47, tz: 8,   // 用于计算日出日落
+  locationName: '上海市',           // 默认位置（可在页面上切换，或用网址参数 ?city=区划码 / 名称）
+  lat: 31.24, lon: 121.48, tz: 8,   // 用于计算日出日落；中国统一按东八区
   minHoursPerDay: 12,               // 有效小时数低于此值的日期视为“数据不足”
   dataUrl: 'data/history.csv'       // 温湿度计导出的 CSV
 };
@@ -551,9 +570,10 @@ function renderLegend(elId, bands, darkText){
 function setupTile(){
   const chart = getChart(document.getElementById('chart-tile'));
   renderLegend('legend-temp', TEMP_BANDS, false);
-  buildControls(document.getElementById('ctl-tile'), {
+  const opts = {
     options:() => periodOptions('month'),
     onChange(_, key){
+      TILE_REDRAW = () => opts.onChange(_, key);
       const [y,m] = key.split('-').map(Number), N = daysInMonth(y,m);
       document.getElementById('title-tile').textContent = `${y}年${m}月 每小时平均温度`;
       const cells = [], badDays = [], sun = [];
@@ -572,7 +592,7 @@ function setupTile(){
         {pts:poly('dusk',24), a:.30}, {pts:poly('set',24), a:.22}
       ];
       document.getElementById('note-tile').textContent =
-        `每格为该小时平均温度，按体感区间着色。阴影叠加表示夜晚和民用晨昏蒙影（按${CONFIG.locationName} ${CONFIG.lat}°N ${CONFIG.lon}°E 计算）。` +
+        `每格为该小时平均温度，按体感区间着色。阴影叠加表示夜晚和民用晨昏蒙影（按${CONFIG.locationName} ${CONFIG.lat}°N ${CONFIG.lon}°E 计算，可在页面顶部切换位置）。` +
         (badDays.length ? ` 有效小时数少于 ${CONFIG.minHoursPerDay} 的日期以灰色“数据不足”显示。` : '') + ' 深色格为该小时无数据。';
       chart.setOption({
         backgroundColor:'transparent', animation:false,
@@ -619,8 +639,10 @@ function setupTile(){
         ]
       }, {notMerge:true});
     }
-  });
+  };
+  buildControls(document.getElementById('ctl-tile'), opts);
 }
+let TILE_REDRAW = null;
 
 /* ================= 图 4：露点舒适等级占比 ================= */
 function setupDew(){
@@ -761,6 +783,44 @@ async function importFiles(fileList){
   // 防止文件拖到区域外时浏览器直接打开文件
   window.addEventListener('dragover', e => e.preventDefault());
   window.addEventListener('drop', e => e.preventDefault());
+})();
+
+/* ================= 位置选择（日出日落） ================= */
+(function setupLocation(){
+  const LIST = (window.CN_CITIES || []);
+  const provSel = document.getElementById('loc-prov'), citySel = document.getElementById('loc-city');
+  if (!LIST.length){ provSel.closest('.loc').hidden = true; return; }
+  const find = q => {
+    for (const p of LIST) for (const c of p.c) if (c[1] === q || c[0] === q) return {p, c};
+    return null;
+  };
+  const params = new URLSearchParams(location.search);
+  let cur = find(params.get('city') || '') || find(CONFIG.locationName) || {p:LIST[0], c:LIST[0].c[0]};
+  provSel.innerHTML = LIST.map((p,i) => `<option value="${i}">${p.p}</option>`).join('');
+  function fillCities(p){
+    citySel.innerHTML = p.c.map(c => `<option value="${c[1]}">${c[0]}</option>`).join('');
+  }
+  function apply(sel, updateUrl){
+    cur = sel;
+    provSel.value = LIST.indexOf(sel.p);
+    fillCities(sel.p);
+    citySel.value = sel.c[1];
+    // 直辖市省市同名，只显示一次
+    const name = sel.p.p === sel.c[0] ? sel.c[0] : `${sel.p.p} ${sel.c[0]}`;
+    Object.assign(CONFIG, {locationName:name, lon:sel.c[2], lat:sel.c[3]});
+    if (updateUrl){
+      const u = new URL(location.href); u.searchParams.set('city', sel.c[1]);
+      history.replaceState(null, '', u);
+    }
+  }
+  provSel.onchange = () => { const p = LIST[+provSel.value]; apply({p, c:p.c[0]}, true); refresh(); };
+  citySel.onchange = () => { apply(find(citySel.value), true); refresh(); };
+  function refresh(){
+    if (TILE_REDRAW) TILE_REDRAW();
+    const s = document.getElementById('summary');
+    s.textContent = s.textContent.replace(/位置 [^·]*/, `位置 ${CONFIG.locationName} `).trim();
+  }
+  apply(cur, false);
 })();
 
 renderAll();
