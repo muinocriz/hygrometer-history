@@ -4,11 +4,25 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>温湿度计历史数据</title>
+<script>
+  // 尽早确定主题，避免闪烁：优先用户上次的选择，否则跟随系统
+  (function(){ let th; try { th = localStorage.getItem('hygro-theme'); } catch(e){}
+    if (th !== 'light' && th !== 'dark') th = window.matchMedia && matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+    document.documentElement.dataset.theme = th; })();
+</script>
 <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js"></script>
 <style>
   :root{
     --bg:#121a2b; --card:#172137; --line:#26324a; --ink:#e6ebf4; --ink2:#a9b3c6; --muted:#76819a;
-    --accent:#f2b84b;
+    --accent:#f2b84b; --ctl:#1d2840; --seg-on:#2a3754; --hover:#5d73a0; --chip-sep:#3a4560;
+    --drop:#3a4868; --link:#8fa6cc; --bad:#ef7b5f; --dev-sw:rgba(170,185,215,.35);
+    color-scheme:dark;
+  }
+  :root[data-theme="light"]{
+    --bg:#f2f4f8; --card:#ffffff; --line:#dfe4ec; --ink:#1b2333; --ink2:#4a5568; --muted:#7a8599;
+    --accent:#d4900f; --ctl:#f4f6fa; --seg-on:#e2e8f2; --hover:#9aa8c4; --chip-sep:#d3d9e4;
+    --drop:#c3ccdb; --link:#3466c2; --bad:#d4502f; --dev-sw:rgba(80,100,140,.3);
+    color-scheme:light;
   }
   *{box-sizing:border-box}
   [hidden]{display:none !important}
@@ -17,7 +31,7 @@
   header{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap}
   header h1{margin:0 0 6px;font-size:24px;font-weight:700}
   .gh{display:inline-flex;align-items:center;gap:7px;color:var(--ink2);text-decoration:none;font-size:13px;border:1px solid var(--line);border-radius:8px;padding:6px 12px;white-space:nowrap}
-  .gh:hover{color:var(--ink);border-color:#5d73a0}
+  .gh:hover{color:var(--ink);border-color:var(--hover)}
   .gh svg{width:16px;height:16px;fill:currentColor}
   .loc{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:12px;font-size:13px;color:var(--ink2)}
   .loc .hint{color:var(--muted);font-size:12px}
@@ -29,8 +43,8 @@
   .seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
   .seg button{background:transparent;color:var(--ink2);border:0;padding:6px 14px;font-size:13px;cursor:pointer}
   .seg button+button{border-left:1px solid var(--line)}
-  .seg button.on{background:#2a3754;color:var(--ink);font-weight:600}
-  select,.nav{background:#1d2840;color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:6px 10px;font-size:13px;cursor:pointer}
+  .seg button.on{background:var(--seg-on);color:var(--ink);font-weight:600}
+  select,.nav{background:var(--ctl);color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:6px 10px;font-size:13px;cursor:pointer}
   .nav{padding:6px 10px;line-height:1}
   .nav:disabled{opacity:.35;cursor:default}
   .chart{width:100%;height:420px}
@@ -39,14 +53,14 @@
   .legend .chip{display:flex;flex-direction:column;align-items:center;position:relative;padding:0 3px}
   .legend .chip span{display:block;min-width:58px;text-align:center;padding:4px 8px;border-radius:6px;font-size:13px;font-weight:700}
   .legend .chip i{position:absolute;right:-16px;bottom:-20px;font-style:normal;font-size:12px;color:var(--ink2);white-space:nowrap;font-weight:600}
-  .legend .chip + .chip{border-left:1px solid #3a4560}
+  .legend .chip + .chip{border-left:1px solid var(--chip-sep)}
   .legend-wrap{padding-bottom:22px}
   .checks{display:flex;gap:12px;margin-right:6px}
   .checks label{display:flex;align-items:center;gap:5px;font-size:13px;color:var(--ink2);cursor:pointer;user-select:none}
-  .checks input{accent-color:#8fa6cc;margin:0;cursor:pointer}
+  .checks input{accent-color:var(--link);margin:0;cursor:pointer}
   .checks i{display:inline-block;width:14px;height:3px;border-radius:2px}
-  .drop{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;padding:22px 16px;border:1.5px dashed #3a4868;border-radius:10px;cursor:pointer;text-align:center;transition:background .15s,border-color .15s;outline:none}
-  .drop:hover,.drop:focus-visible{border-color:#5d73a0;background:rgba(255,255,255,.02)}
+  .drop{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;padding:22px 16px;border:1.5px dashed var(--drop);border-radius:10px;cursor:pointer;text-align:center;transition:background .15s,border-color .15s;outline:none}
+  .drop:hover,.drop:focus-visible{border-color:var(--hover);background:rgba(255,255,255,.02)}
   .drop.over{border-color:var(--accent);background:rgba(242,184,75,.07)}
   .drop svg{width:30px;height:30px;stroke:var(--ink2)}
   .drop.over svg{stroke:var(--accent)}
@@ -56,27 +70,33 @@
   .import-status ul{list-style:none;margin:0 0 8px;padding:0;display:flex;flex-direction:column;gap:4px}
   .import-status li{display:flex;gap:10px;align-items:baseline;flex-wrap:wrap}
   .import-status li b{color:var(--ink);font-weight:600;word-break:break-all}
-  .import-status li .bad{color:#ef7b5f}
+  .import-status li .bad{color:var(--bad)}
   .import-bar{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
   .import-bar label{display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none}
-  .import-bar input{accent-color:#8fa6cc;margin:0}
-  .btn{background:#1d2840;color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:5px 12px;font-size:13px;cursor:pointer}
-  .btn:hover{border-color:#5d73a0}
+  .import-bar input{accent-color:var(--link);margin:0}
+  .btn{background:var(--ctl);color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:5px 12px;font-size:13px;cursor:pointer}
+  .btn:hover{border-color:var(--hover)}
   .ref-bar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:2px 0 6px;font-size:13px;color:var(--ink2)}
   .ref-bar label{display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none}
   .ref-bar label.off{opacity:.45;cursor:not-allowed}
-  .ref-bar input{accent-color:#8fa6cc;margin:0}
-  .ref-bar .sw{display:inline-block;width:14px;height:12px;border-radius:2px;background:rgba(242,184,75,.18);border:1.5px solid #f2b84b}
-  .ref-bar .sw.dev{background:rgba(170,185,215,.35);border-color:rgba(170,185,215,.35)}
+  .ref-bar input{accent-color:var(--link);margin:0}
+  .ref-bar .sw{display:inline-block;width:14px;height:12px;border-radius:2px;background:rgba(242,184,75,.18);border:1.5px solid var(--accent)}
+  .ref-bar .sw.dev{background:var(--dev-sw);border-color:var(--dev-sw)}
   .ref-bar .src{color:var(--muted);font-size:12px}
   .ref-bar .file{font-size:12px;color:var(--ink2)}
-  .ref-bar .link{background:none;border:0;color:#8fa6cc;cursor:pointer;font-size:12px;padding:0}
+  .ref-bar .link{background:none;border:0;color:var(--link);cursor:pointer;font-size:12px;padding:0}
   .stats{display:flex;gap:12px;flex-wrap:wrap;margin-top:6px}
   .stat{flex:1 1 220px;border:1px solid var(--line);border-radius:10px;padding:10px 12px}
   .stat .k{font-size:12px;color:var(--muted)}
   .stat .v{font-size:20px;font-weight:700;margin-top:2px}
   .stat .v small{font-size:12px;font-weight:400;color:var(--ink2);margin-left:4px}
   .empty{padding:60px 20px;text-align:center;color:var(--muted);font-size:14px}
+  .top-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+  button.gh{background:transparent;cursor:pointer;font-family:inherit}
+  .export{display:inline-flex;gap:4px}
+  .export button{background:var(--ctl);border:1px solid var(--line);border-radius:8px;padding:4px 8px;font-size:15px;line-height:1.2;cursor:pointer}
+  .export button:hover{border-color:var(--hover)}
+  .export button:disabled{opacity:.5;cursor:progress}
   .note{color:var(--muted);font-size:12px;margin:8px 2px 0;line-height:1.6}
 </style>
 </head>
@@ -93,10 +113,13 @@
         <span class="hint">目前仅支持列表中的中国大陆地级行政区（不含港澳台）；为保证日出日落的精确度，只收录面积跨度不大的区域（省会城市与直辖市保留），后续会逐步更新</span>
       </div>
     </div>
+    <div class="top-actions">
+    <button class="gh" id="theme-btn" type="button" title="切换浅色 / 深色模式"></button>
     <a class="gh" href="https://github.com/muinocriz/hygrometer-history" target="_blank" rel="noopener" title="在 GitHub 查看项目">
       <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
       GitHub 项目主页
     </a>
+    </div>
   </header>
 
   <section class="card" id="import-card">
@@ -127,7 +150,7 @@
     </div>
     <div id="chart-temp" class="chart"></div>
     <div class="stats" id="ref-stats-t" hidden></div>
-    <p class="note">月视图：半透明柱为当日最低～最高，折线为每小时最高 / 最低值；数据不足的日期不画柱子，以灰底标出。黄色窄框为参考气温（当日最低～最高）：优先使用你导入的气象站数据，其余日期使用 Open-Meteo 历史天气（ERA5 再分析格点模型数据，非站点实测，最近几天通常尚无数据），按页面顶部所选位置查询。<a href="https://open-meteo.com/" target="_blank" rel="noopener" style="color:#8fa6cc">Weather data by Open-Meteo.com</a>（CC BY 4.0）。日、年视图另含平均值，每小时平均值 = (该小时最低 + 最高) / 2。虚线表示缺失数据的区段，两端用实测值连接。</p>
+    <p class="note">月视图：半透明柱为当日最低～最高，折线为每小时最高 / 最低值；数据不足的日期不画柱子，以灰底标出。黄色窄框为参考气温（当日最低～最高）：优先使用你导入的气象站数据，其余日期使用 Open-Meteo 历史天气（ERA5 再分析格点模型数据，非站点实测，最近几天通常尚无数据），按页面顶部所选位置查询。<a href="https://open-meteo.com/" target="_blank" rel="noopener" style="color:var(--link)">Weather data by Open-Meteo.com</a>（CC BY 4.0）。日、年视图另含平均值，每小时平均值 = (该小时最低 + 最高) / 2。虚线表示缺失数据的区段，两端用实测值连接。</p>
   </section>
 
   <section class="card">
@@ -154,7 +177,7 @@
     </div>
     <div id="chart-hum" class="chart"></div>
     <div class="stats" id="ref-stats-h" hidden></div>
-    <p class="note">月视图：半透明柱为当日最低～最高，折线为每小时最高 / 最低值；数据不足的日期不画柱子，以灰底标出。黄色窄框为参考湿度（当日最低～最高）：优先使用你导入的气象站数据，其余日期使用 Open-Meteo 历史天气的每小时相对湿度取当日最高 / 最低（ERA5 再分析格点模型数据，非站点实测，最近几天通常尚无数据），按页面顶部所选位置查询。<a href="https://open-meteo.com/" target="_blank" rel="noopener" style="color:#8fa6cc">Weather data by Open-Meteo.com</a>（CC BY 4.0）。</p>
+    <p class="note">月视图：半透明柱为当日最低～最高，折线为每小时最高 / 最低值；数据不足的日期不画柱子，以灰底标出。黄色窄框为参考湿度（当日最低～最高）：优先使用你导入的气象站数据，其余日期使用 Open-Meteo 历史天气的每小时相对湿度取当日最高 / 最低（ERA5 再分析格点模型数据，非站点实测，最近几天通常尚无数据），按页面顶部所选位置查询。<a href="https://open-meteo.com/" target="_blank" rel="noopener" style="color:var(--link)">Weather data by Open-Meteo.com</a>（CC BY 4.0）。</p>
   </section>
 
   <section class="card">
@@ -217,8 +240,35 @@ const DEW_BANDS = [    // 露点上限（不含）
   {max:24, name:'沉闷',     color:'#ff6fb5'},
   {max:Infinity, name:'令人难受', color:'#ff6845'}
 ];
-const LINE_COLORS = {max:'#ef7b5f', avg:'#f2c96b', min:'#6fb6e0'};
-const BG = '#172137', GRID = '#26324a', AXIS = '#76819a', INK = '#e6ebf4', INK2 = '#a9b3c6';
+/* ---------- 主题（深色 / 浅色） ---------- */
+const THEMES = {
+  dark: {
+    bg:'#172137', grid:'#26324a', axis:'#76819a', ink:'#e6ebf4', ink2:'#a9b3c6',
+    line:{max:'#ef7b5f', avg:'#f2c96b', min:'#6fb6e0'}, ref:'#f2b84b',
+    tipBg:'#0e1524', devBar:'rgba(170,185,215,.13)', devLegend:'rgba(170,185,215,.35)', badArea:'rgba(150,160,185,.10)',
+    refFill:'rgba(242,184,75,.16)', refLegend:'rgba(242,184,75,.3)', grid2:'rgba(255,255,255,.06)',
+    missCell:'rgba(140,150,175,.18)', missStroke:'rgba(140,150,175,.35)', badCol:'rgba(140,150,175,.14)',
+    night:a => `rgba(8,12,24,${a})`, muggy:'#7f93b5', labelBg:'rgba(18,26,43,.85)', shadow:'rgba(255,255,255,.05)',
+    dry:'#2b3650', dryInk:'#e6ebf4'
+  },
+  light: {
+    bg:'#ffffff', grid:'#e3e8f0', axis:'#7a8599', ink:'#1b2333', ink2:'#4a5568',
+    line:{max:'#e0603f', avg:'#c8901a', min:'#2f8bc9'}, ref:'#d08a0c',
+    tipBg:'#ffffff', devBar:'rgba(80,100,140,.11)', devLegend:'rgba(80,100,140,.3)', badArea:'rgba(110,120,140,.10)',
+    refFill:'rgba(230,160,30,.14)', refLegend:'rgba(230,160,30,.3)', grid2:'rgba(0,0,0,.06)',
+    missCell:'rgba(120,130,150,.16)', missStroke:'rgba(120,130,150,.35)', badCol:'rgba(120,130,150,.12)',
+    night:a => `rgba(15,25,55,${(a*0.75).toFixed(3)})`, muggy:'#6b7f9f', labelBg:'rgba(255,255,255,.9)', shadow:'rgba(0,0,0,.04)',
+    dry:'#e6ebf3', dryInk:'#1b2333'
+  }
+};
+let TH, LINE_COLORS, BG, GRID, AXIS, INK, INK2, REF_COLOR, EXPORT_MOBILE = false;
+function setThemeVars(name){
+  TH = THEMES[name] || THEMES.dark;
+  ({bg:BG, grid:GRID, axis:AXIS, ink:INK, ink2:INK2, ref:REF_COLOR} = TH);
+  LINE_COLORS = TH.line;
+  DEW_BANDS[0].color = TH.dry; DEW_BANDS[0].ink = TH.dryInk;
+}
+setThemeVars(document.documentElement.dataset.theme);
 
 /* ================= 数据解析 ================= */
 const pad = n => String(n).padStart(2,'0');
@@ -336,9 +386,19 @@ function getChart(el){
   if (!c){ c = echarts.init(el); CHARTS.add(c); }
   return c;
 }
-window.addEventListener('resize', () => CHARTS.forEach(c => c.resize()));
+// 窄屏（手机）：横轴标签减半，避免重叠；跨越断点时按当前选择重画
+const isNarrow = () => ((document.getElementById('charts') || document.body).clientWidth || innerWidth) < 640;
+let lastNarrow = null;
+window.addEventListener('resize', () => {
+  CHARTS.forEach(c => c.resize());
+  const n = isNarrow();
+  if (lastNarrow !== null && n !== lastNarrow) redrawAll();
+  lastNarrow = n;
+});
 
 /* ================= 通用控件 ================= */
+const CONTROL_FIRES = new Map();   // 控件容器 -> 按当前选择重画
+const redrawAll = () => CONTROL_FIRES.forEach(f => f());
 function buildControls(el, {modes, initMode, options, onChange}){
   // modes: [{key,label}] 可选；options(mode) -> [{value,label}]
   let mode = initMode;
@@ -371,6 +431,7 @@ function buildControls(el, {modes, initMode, options, onChange}){
     onChange(mode, sel.value);
   }
   sel.onchange = fire;
+  CONTROL_FIRES.set(el, fire);
   prev.onclick = () => { if (sel.selectedIndex>0){ sel.selectedIndex--; fire(); } };
   next.onclick = () => { if (sel.selectedIndex<sel.options.length-1){ sel.selectedIndex++; fire(); } };
   refreshOptions(true);
@@ -451,7 +512,6 @@ const REF = {imported:{t:{}, h:{}}, files:{t:[], h:[]}, om:new Map(), curMonth:{
 const REF_TEXT = {t:{name:'参考气温', unit:'℃', dev:'温度计', max:'最高温', min:'最低温'},
                   h:{name:'参考湿度', unit:'%', dev:'温湿度计', max:'最高湿度', min:'最低湿度'}};
 const redrawRefs = () => ['t','h'].forEach(f => REF.redraw[f] && REF.redraw[f]());
-const REF_COLOR = '#f2b84b';
 
 // 解析气象站每日数据：支持 markdown 表格 / CSV / TSV；日期可为完整日期或仅“日”（归入当前查看的月份）
 function parseStation(text, fallbackMonth){
@@ -579,8 +639,8 @@ function setupLineChart(chartId, ctlId, field, unit){
       // 月视图：标出数据不足的日期
       const bad = Object.entries(P.meta).filter(([,m]) => m.insufficient || (mode==='month' && m.missing));
       {
-        series[0].markArea = {silent:true, itemStyle:{color:'rgba(150,160,185,.10)'},
-          label:{color:AXIS, fontSize:11, position:'insideTop'},
+        series[0].markArea = {silent:true, itemStyle:{color:TH.badArea},
+          label:{color:AXIS, fontSize:12, position:'insideTop'},
           data: bad.map(([x,m]) => [{xAxis:+x-0.5, name: m.insufficient ? `数据不足\n${m.count}h` : '无数据'}, {xAxis:+x+0.5}])};
       }
       const anyData = P.pts.avg.some(p=>p[1]!=null);
@@ -589,7 +649,7 @@ function setupLineChart(chartId, ctlId, field, unit){
         legend:{top:0, textStyle:{color:INK2}, itemWidth:18, itemHeight:3, icon:'roundRect',
           data:[names.max, names.avg, names.min]},
         grid:{left:48, right:20, top:40, bottom:36},
-        tooltip:{trigger:'axis', backgroundColor:'#0e1524', borderColor:GRID, textStyle:{color:INK, fontSize:12},
+        tooltip:{trigger:'axis', backgroundColor:TH.tipBg, borderColor:GRID, textStyle:{color:INK, fontSize:12},
           axisPointer:{type:'line', lineStyle:{color:AXIS, type:'dashed'}},
           formatter(ps){
             const x = Math.round(ps[0].axisValue), m = P.meta[x]; if (!m) return '';
@@ -603,9 +663,9 @@ function setupLineChart(chartId, ctlId, field, unit){
             if (mode==='year') html += `<br><span style="color:${AXIS}">${m.days} 天有效数据</span>`;
             return html;
           }},
-        xAxis:{type:'value', min:mode==='day'?0:P.xMin-1, max:mode==='day'?23:P.xMax+1, interval:P.interval ?? undefined, minInterval:1,
+        xAxis:{type:'value', min:mode==='day'?0:P.xMin-1, max:mode==='day'?23:P.xMax+1, interval:P.interval ? P.interval * (isNarrow() ? 2 : 1) : undefined, minInterval:1,
           axisLine:{lineStyle:{color:GRID}}, axisTick:{show:false}, splitLine:{show:false},
-          axisLabel:{color:AXIS, formatter:v => Number.isInteger(v) && v>=P.xMin && v<=P.xMax ? P.xFmt(v) : ''}},
+          axisLabel:{color:AXIS, hideOverlap:true, showMaxLabel:mode !== 'day', formatter:v => Number.isInteger(v) && v>=P.xMin && v<=P.xMax ? P.xFmt(v) : ''}},
         yAxis:{type:'value', scale:true, axisLabel:{color:AXIS, formatter:`{value}${unit}`},
           splitLine:{lineStyle:{color:GRID}}, axisLine:{show:false}},
         graphic: anyData ? [] : [{type:'text', left:'center', top:'middle', style:{text:'该时段无数据', fill:AXIS, fontSize:14}}],
@@ -649,11 +709,11 @@ function setupLineChart(chartId, ctlId, field, unit){
     const showDev = document.getElementById(`dev-on-${field}`).checked;
     const series = [
       {id:'range', name:rangeName, type:'custom', data:showDev ? bars : [], encode:{x:0, y:[1,2]}, z:1, silent:true, tooltip:{show:false},
-        itemStyle:{color:'rgba(170,185,215,.35)'},
+        itemStyle:{color:TH.devLegend},
         renderItem(params, api){
           const d = api.value(0), p0 = api.coord([d-0.42, api.value(2)]), p1 = api.coord([d+0.42, api.value(1)]);
           return {type:'rect', shape:{x:p0[0], y:Math.min(p0[1],p1[1]), width:p1[0]-p0[0], height:Math.max(1, Math.abs(p1[1]-p0[1])), r:3},
-            style:{fill:'rgba(170,185,215,.13)'}};
+            style:{fill:TH.devBar}};
         }},
       ...lineWithGaps(names.max, LINE_COLORS.max, maxPts, 5, {symbols:false, width:1.5}),
       ...lineWithGaps(names.min, LINE_COLORS.min, minPts, 5, {symbols:false, width:1.5})
@@ -662,21 +722,23 @@ function setupLineChart(chartId, ctlId, field, unit){
     if (refData.length) series.push({id:'ref', name:refName, type:'custom', data:refData, encode:{x:0, y:[1,2]}, z:3, silent:true, tooltip:{show:false},
       itemStyle:{color:REF_COLOR},
       renderItem(params, api){
-        const d = api.value(0), p0 = api.coord([d-0.2, api.value(2)]), p1 = api.coord([d+0.2, api.value(1)]);
-        return {type:'rect', shape:{x:p0[0], y:Math.min(p0[1],p1[1]), width:p1[0]-p0[0], height:Math.max(1, Math.abs(p1[1]-p0[1])), r:3},
-          style:{fill:'rgba(242,184,75,.16)', stroke:REF_COLOR, lineWidth:1.5}};
+        // 手机版导出时柱子更宽、描边更细，避免缩小后糊成一条锯齿线
+        const half = EXPORT_MOBILE ? 0.34 : 0.2;
+        const d = api.value(0), p0 = api.coord([d-half, api.value(2)]), p1 = api.coord([d+half, api.value(1)]);
+        return {type:'rect', shape:{x:p0[0], y:Math.min(p0[1],p1[1]), width:p1[0]-p0[0], height:Math.max(1, Math.abs(p1[1]-p0[1])), r:EXPORT_MOBILE ? 1.5 : 3},
+          style:{fill:TH.refFill, stroke:REF_COLOR, lineWidth:EXPORT_MOBILE ? 1 : 1.5}};
       }});
-    series[1].markArea = {silent:true, itemStyle:{color:'rgba(150,160,185,.10)'},
-      label:{color:AXIS, fontSize:11, position:'insideTop'},
+    series[1].markArea = {silent:true, itemStyle:{color:TH.badArea},
+      label:{color:AXIS, fontSize:12, position:'insideTop'},
       data: bad.map(([d,s]) => [{xAxis:+d-0.5, name: s.count ? `数据不足\n${s.count}h` : '无数据'}, {xAxis:+d+0.5}])};
     const anyData = maxPts.some(p => p[1] != null);
     chart.setOption({
       backgroundColor:'transparent', animationDuration:400,
       legend:{top:0, textStyle:{color:INK2}, itemWidth:18, itemHeight:3, icon:'roundRect',
-        data:[names.max, names.min, ...(showDev ? [{name:rangeName, itemHeight:10, itemStyle:{color:'rgba(170,185,215,.35)'}}] : []),
-          ...(refData.length ? [{name:refName, itemHeight:10, itemStyle:{color:'rgba(242,184,75,.3)', borderColor:REF_COLOR, borderWidth:1}}] : [])]},
+        data:[names.max, names.min, ...(showDev ? [{name:rangeName, itemHeight:10, itemStyle:{color:TH.devLegend}}] : []),
+          ...(refData.length ? [{name:refName, itemHeight:10, itemStyle:{color:TH.refLegend, borderColor:REF_COLOR, borderWidth:1}}] : [])]},
       grid:{left:48, right:20, top:40, bottom:36},
-      tooltip:{trigger:'axis', backgroundColor:'#0e1524', borderColor:GRID, textStyle:{color:INK, fontSize:12},
+      tooltip:{trigger:'axis', backgroundColor:TH.tipBg, borderColor:GRID, textStyle:{color:INK, fontSize:12},
         axisPointer:{type:'line', lineStyle:{color:AXIS, type:'dashed'}},
         formatter(ps){
           const x = ps[0].axisValue, d = Math.round(x);
@@ -735,9 +797,9 @@ function setupOverlay(chartId, ctlId, titleId, field, unit){
   const chart = getChart(document.getElementById(chartId));
   const label = field==='t' ? '温度' : '湿度';
   const KINDS = [
-    {k:'max', name:`最高${label}`, color:LINE_COLORS.max},
-    {k:'avg', name:`平均${label}`, color:LINE_COLORS.avg},
-    {k:'min', name:`最低${label}`, color:LINE_COLORS.min}
+    {k:'max', name:`最高${label}`, get color(){ return LINE_COLORS.max; }},
+    {k:'avg', name:`平均${label}`, get color(){ return LINE_COLORS.avg; }},
+    {k:'min', name:`最低${label}`, get color(){ return LINE_COLORS.min; }}
   ];
   const hexA = (hex, a) => { const n = parseInt(hex.slice(1),16); return `rgba(${n>>16},${(n>>8)&255},${n&255},${a})`; };
   const visible = {max:true, avg:true, min:true};
@@ -751,7 +813,7 @@ function setupOverlay(chartId, ctlId, titleId, field, unit){
   const box = document.createElement('div'); box.className = 'checks';
   KINDS.forEach(({k, name, color}) => {
     const lb = document.createElement('label');
-    lb.innerHTML = `<input type="checkbox" checked><i style="background:${color}"></i>${name}`;
+    lb.innerHTML = `<input type="checkbox" checked><i data-k="${k}" style="background:${color}"></i>${name}`;
     lb.querySelector('input').onchange = e => { visible[k] = e.target.checked; render(); };
     box.appendChild(lb);
   });
@@ -759,6 +821,7 @@ function setupOverlay(chartId, ctlId, titleId, field, unit){
   function render(){
       const key = curKey;
       const ACTIVE = KINDS.filter(x => visible[x.k]);
+      ctl.querySelectorAll('i[data-k]').forEach(i => { i.style.background = LINE_COLORS[i.dataset.k]; });
       const [y,m] = key.split('-').map(Number);
       document.getElementById(titleId).textContent = `${label} · ${y}年${m}月 日变化叠加`;
       const validDays = DATES.filter(d => d.startsWith(key)).filter(d => dayStats(d).valid);
@@ -797,7 +860,7 @@ function setupOverlay(chartId, ctlId, titleId, field, unit){
       chart.setOption({
         backgroundColor:'transparent', animationDuration:400,
         grid:{left:48, right:20, top:16, bottom:36},
-        tooltip:{trigger:'axis', backgroundColor:'#0e1524', borderColor:GRID, textStyle:{color:INK, fontSize:12},
+        tooltip:{trigger:'axis', backgroundColor:TH.tipBg, borderColor:GRID, textStyle:{color:INK, fontSize:12},
           axisPointer:{type:'line', lineStyle:{color:AXIS, type:'dashed'}},
           formatter(ps){
             const h = Math.round(ps[0].axisValue);
@@ -812,8 +875,8 @@ function setupOverlay(chartId, ctlId, titleId, field, unit){
             html += `<br><span style="color:${AXIS}">${n} 天参与计算</span>`;
             return html;
           }},
-        xAxis:{type:'value', min:0, max:23, interval:2, axisLine:{lineStyle:{color:GRID}}, axisTick:{show:false}, splitLine:{show:false},
-          axisLabel:{color:AXIS, formatter:v => `${pad(v)}:00`}},
+        xAxis:{type:'value', min:0, max:23, interval:isNarrow() ? 4 : 2, axisLine:{lineStyle:{color:GRID}}, axisTick:{show:false}, splitLine:{show:false},
+          axisLabel:{color:AXIS, hideOverlap:true, showMaxLabel:false, formatter:v => `${pad(v)}:00`}},
         yAxis:{type:'value', scale:true, min:yr.min, max:yr.max, interval:step, axisLabel:{color:AXIS, formatter:`{value}${unit}`}, splitLine:{lineStyle:{color:GRID}}, axisLine:{show:false}},
         graphic: !validDays.length ? [{type:'text', left:'center', top:'middle', style:{text:'该月无有效数据', fill:AXIS, fontSize:14}}]
                : !ACTIVE.length ? [{type:'text', left:'center', top:'middle', style:{text:'请至少勾选一项', fill:AXIS, fontSize:14}}] : [],
@@ -862,7 +925,7 @@ function setupTile(){
       chart.setOption({
         backgroundColor:'transparent', animation:false,
         grid:{left:58, right:58, top:12, bottom:34},
-        tooltip:{trigger:'item', backgroundColor:'#0e1524', borderColor:GRID, textStyle:{color:INK, fontSize:12},
+        tooltip:{trigger:'item', backgroundColor:TH.tipBg, borderColor:GRID, textStyle:{color:INK, fontSize:12},
           formatter(p){
             if (p.seriesId==='bad') return `<b>${m}月${p.value[0]}日</b><br><span style="color:${AXIS}">${p.value[1] ? `数据不足（${p.value[1]} 小时）` : '无数据'}</span>`;
             const [d,h,v] = p.value, s = sun[d-1];
@@ -876,7 +939,7 @@ function setupTile(){
           splitLine:{show:false},
           axisLabel:{color:AXIS, formatter:v => (v===1 || v%5===0) && v<=N ? `${m}/${v}` : ''}},
         yAxis:[0,1].map(i => ({type:'value', min:0, max:24, interval:2, inverse:true, position:i?'right':'left',
-          axisLine:{show:false}, axisTick:{show:false}, splitLine:{show:i===0, lineStyle:{color:'rgba(255,255,255,.06)'}},
+          axisLine:{show:false}, axisTick:{show:false}, splitLine:{show:i===0, lineStyle:{color:TH.grid2}},
           axisLabel:{color:AXIS, formatter:v => `${pad(v)}:00`}})),
         series:[
           {id:'cells', type:'custom', data:cells, encode:{x:0, y:1},
@@ -884,22 +947,22 @@ function setupTile(){
               const d = api.value(0), h = api.value(1), v = api.value(2);
               const p0 = api.coord([d-0.5, h+1]), p1 = api.coord([d+0.5, h]);
               const shape = {x:p0[0], y:Math.min(p0[1], p1[1]), width:p1[0]-p0[0], height:Math.abs(p1[1]-p0[1])};
-              if (isNaN(v) || v==null) return {type:'rect', shape, style:{fill:'rgba(140,150,175,.18)', stroke:'rgba(140,150,175,.35)', lineWidth:.5}};
+              if (isNaN(v) || v==null) return {type:'rect', shape, style:{fill:TH.missCell, stroke:TH.missStroke, lineWidth:.5}};
               return {type:'rect', shape, style:{fill:band(TEMP_BANDS, v).color}};
             }},
           {id:'bad', type:'custom', data:badDays, encode:{x:0},
             renderItem(params, api){
               const d = api.value(0), p0 = api.coord([d-0.5, 24]), p1 = api.coord([d+0.5, 0]);
               return {type:'group', children:[
-                {type:'rect', shape:{x:p0[0], y:Math.min(p0[1], p1[1]), width:p1[0]-p0[0], height:Math.abs(p1[1]-p0[1])}, style:{fill:'rgba(140,150,175,.14)'}},
+                {type:'rect', shape:{x:p0[0], y:Math.min(p0[1], p1[1]), width:p1[0]-p0[0], height:Math.abs(p1[1]-p0[1])}, style:{fill:TH.badCol}},
                 {type:'text', x:(p0[0]+p1[0])/2, y:(p0[1]+p1[1])/2, rotation:Math.PI/2,
-                  style:{text: api.value(1) > 0 ? '数据不足' : '无数据', fill:AXIS, fontSize:11, align:'center', verticalAlign:'middle'}}
+                  style:{text: api.value(1) > 0 ? '数据不足' : '无数据', fill:AXIS, fontSize:12, align:'center', verticalAlign:'middle'}}
               ]};
             }},
           {id:'night', type:'custom', data:[0], silent:true, z:10,
             renderItem(params, api){
               return {type:'group', children: shades.map(s => ({type:'polygon',
-                shape:{points:s.pts.map(pt => api.coord(pt))}, style:{fill:`rgba(8,12,24,${s.a})`}}))};
+                shape:{points:s.pts.map(pt => api.coord(pt))}, style:{fill:TH.night(s.a)}}))};
             }}
         ]
       }, {notMerge:true});
@@ -932,7 +995,7 @@ function setupDew(){
         bad.push('-');
         const mg = (cnt[3]+cnt[4]+cnt[5])/s.count*100;
         const labelDays = [1, 11, 21, N];
-        muggy.push({value:Math.round(mg), label:{show: labelDays.includes(d)}});
+        muggy.push({value:Math.round(mg), label:{show: labelDays.includes(d), position: d === 1 ? 'right' : d === N ? 'left' : 'top'}});
         info.push({count:s.count, valid:true, cnt, tdavg:s.tdavg, tdmin:Math.min(...s.hrs.map(r=>r.td)), tdmax:Math.max(...s.hrs.map(r=>r.td))});
       }
       // 自底向上：令人难受 → 干燥
@@ -941,21 +1004,21 @@ function setupDew(){
         name:DEW_BANDS[i].name, type:'bar', stack:'dew', data:perBand[i], barCategoryGap:'12%',
         itemStyle:{color:DEW_BANDS[i].color, borderColor:BG, borderWidth:0.6}, emphasis:{disabled:true}
       }));
-      series.push({name:'数据不足', type:'bar', stack:'dew', data:bad, itemStyle:{color:'rgba(140,150,175,.16)'},
-        label:{show:true, position:'inside', rotate:90, color:AXIS, fontSize:11, formatter:p => info[p.dataIndex].count ? '数据不足' : '无数据'}});
+      series.push({name:'数据不足', type:'bar', stack:'dew', data:bad, itemStyle:{color:TH.badCol},
+        label:{show:true, position:'inside', rotate:90, color:AXIS, fontSize:12, formatter:p => info[p.dataIndex].count ? '数据不足' : '无数据'}});
       series.push({name:'闷热及以上', type:'line', data:muggy, z:10, connectNulls:false,
-        symbol:'circle', lineStyle:{color:'#7f93b5', width:1.5},
-        label:{position:'top', distance:8, color:INK, fontSize:12, fontWeight:600, backgroundColor:'rgba(18,26,43,.85)', padding:[2,5], borderRadius:4,
+        symbol:'circle', lineStyle:{color:TH.muggy, width:1.5},
+        label:{position:'top', distance:8, color:INK, fontSize:12, fontWeight:600, backgroundColor:TH.labelBg, padding:[2,5], borderRadius:4,
           formatter:p => `${m}月${p.dataIndex+1}日\n${p.value}%`},
-        itemStyle:{color:'#121a2b', borderColor:INK, borderWidth:2}});
+        itemStyle:{color:BG, borderColor:INK, borderWidth:2}});
       // 有标签的点显示圆点
       series[series.length-1].data = muggy.map(v => v==='-' ? v : (v.label.show ? {...v, symbolSize:8, symbol:'circle'} : {...v, symbol:'none'}));
       series[series.length-1].symbolSize = 8;
       chart.setOption({
         backgroundColor:'transparent', animationDuration:400,
         grid:{left:52, right:52, top:16, bottom:34},
-        tooltip:{trigger:'axis', axisPointer:{type:'shadow', shadowStyle:{color:'rgba(255,255,255,.05)'}},
-          backgroundColor:'#0e1524', borderColor:GRID, textStyle:{color:INK, fontSize:12},
+        tooltip:{trigger:'axis', axisPointer:{type:'shadow', shadowStyle:{color:TH.shadow}},
+          backgroundColor:TH.tipBg, borderColor:GRID, textStyle:{color:INK, fontSize:12},
           formatter(ps){
             const i = ps[0].dataIndex, it = info[i];
             let html = `<b>${m}月${i+1}日</b>`;
@@ -1034,6 +1097,166 @@ async function importFiles(fileList){
   }
   renderAll();
 }
+
+/* ================= 主题切换 ================= */
+function applyTheme(name){
+  document.documentElement.dataset.theme = name;
+  try { localStorage.setItem('hygro-theme', name); } catch(e){}
+  setThemeVars(name);
+  updateThemeBtn();
+  renderLegend('legend-temp', TEMP_BANDS, false);
+  renderLegend('legend-dew', DEW_BANDS, true);
+  redrawAll();
+}
+function updateThemeBtn(){
+  const light = document.documentElement.dataset.theme === 'light';
+  document.getElementById('theme-btn').textContent = light ? '🌙 深色模式' : '☀️ 浅色模式';
+}
+document.getElementById('theme-btn').onclick = () =>
+  applyTheme(document.documentElement.dataset.theme === 'light' ? 'dark' : 'light');
+updateThemeBtn();
+
+/* ================= 导出 PNG（🖥️ 桌面版 / 📱 手机版） ================= */
+const EXPORT_FONT = '-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei","Segoe UI",sans-serif';
+const measureCtx = document.createElement('canvas').getContext('2d');
+const textW = (s, size, weight) => { measureCtx.font = `${weight||400} ${size}px ${EXPORT_FONT}`; return measureCtx.measureText(s).width; };
+function wrapLines(s, size, maxW){
+  const lines = []; let cur = '';
+  for (const ch of s){ if (textW(cur + ch, size) > maxW && cur){ lines.push(cur); cur = ch; } else cur += ch; }
+  if (cur) lines.push(cur);
+  return lines;
+}
+// 色带图例（瓦片图 / 露点图），画在画布底部
+function bandsGraphic(bands, unitText, W, top, mobile){
+  const n = bands.length, perRow = mobile ? Math.ceil(n/2) : n;
+  const gap = 4, cw = Math.min(mobile ? 999 : 96, (W - 24 - gap*(perRow-1)) / perRow), ch = 36;
+  const rowW = perRow*cw + gap*(perRow-1), x0 = (W - rowW)/2;
+  const els = [];
+  bands.forEach((b, i) => {
+    const r = Math.floor(i / perRow), c = i % perRow, x = x0 + c*(cw+gap), y = top + r*(ch+gap);
+    const lo = i ? bands[i-1].max : null, hi = b.max;
+    const range = lo == null ? `< ${hi}${unitText}` : hi === Infinity ? `≥ ${lo}${unitText}` : `${lo}～${hi}${unitText}`;
+    const ink = b.ink || (bands === DEW_BANDS ? '#1a1f2b' : '#ffffff');
+    els.push({type:'rect', shape:{x, y, width:cw, height:ch, r:5}, style:{fill:b.color}},
+      {type:'text', x:x + cw/2, y:y + 4, style:{text:b.name, fill:ink, fontSize:12, fontWeight:700, align:'center', verticalAlign:'top', fontFamily:EXPORT_FONT}},
+      {type:'text', x:x + cw/2, y:y + 20, style:{text:range, fill:ink, fontSize:12, align:'center', verticalAlign:'top', opacity:.85, fontFamily:EXPORT_FONT}});
+  });
+  const rows = Math.ceil(n / perRow);
+  return {els, h: rows*ch + (rows-1)*gap};
+}
+
+async function exportChart(card, mode){
+  const chartEl = card.querySelector('.chart'), src = echarts.getInstanceByDom(chartEl);
+  if (!src) return;
+  const mobile = mode === 'mobile';
+  const o = src.getOption();
+  const W = mobile ? 400 : src.getWidth();
+  const pad = mobile ? 14 : 18;
+
+  // 标题 / 副标题 / 脚注
+  const h2 = card.querySelector('h2').textContent.trim();
+  const sel = card.querySelector('.controls select');
+  let title = h2;
+  if (sel && !/\d{4}年/.test(h2)) title += ' · ' + sel.selectedOptions[0].textContent;
+  let sub = '';
+  if (chartEl.id === 'chart-tile') sub = `夜晚阴影按 ${CONFIG.locationName} 的日出日落计算`;
+  const refSrc = card.querySelector('.ref-bar:not([hidden]) .src');
+  if (refSrc && refSrc.textContent && o.series.some(s => s.id === 'ref')) sub = '参考' + refSrc.textContent.replace(/^来源/, '来源');
+  const usesOM = !!(refSrc && /Open-Meteo/.test(refSrc.textContent) && o.series.some(s => s.id === 'ref'));
+  const titleSize = mobile ? 17 : 18;
+  const titleLines = wrapLines(title, titleSize, W - pad*2);
+  const subLines = sub ? wrapLines(sub, 12, W - pad*2) : [];
+  const headH = 14 + titleLines.length*24 + (subLines.length ? subLines.length*17 + 4 : 0) + 6;
+  const footLines = mobile && usesOM ? ['muinocriz.github.io/hygrometer-history', 'Weather data by Open-Meteo.com'] :
+    [ 'muinocriz.github.io/hygrometer-history' + (usesOM ? ' · Weather data by Open-Meteo.com' : '') ];
+  const footH = footLines.length*16 + 10;
+
+  // 图例（ECharts 自带）
+  let legendH = 0;
+  const lg = (o.legend || [])[0];
+  if (lg && lg.show !== false && (lg.data || []).length){
+    const items = lg.data.map(d => typeof d === 'string' ? d : d.name);
+    let rows = 1, x = 0; const maxW = W - pad*2, gapL = mobile ? 10 : 16;
+    items.forEach(nm => { const w = 18 + 5 + textW(nm, 12) + gapL; if (x + w > maxW && x > 0){ rows++; x = 0; } x += w; });
+    legendH = rows*20 + 8;
+    Object.assign(lg, {top:headH, left:mobile ? pad : 'center', width:maxW, itemGap:gapL,
+      textStyle:{...(lg.textStyle||{}), color:INK2, fontSize:12, fontFamily:EXPORT_FONT}});
+  }
+  // 色带图例
+  const bands = chartEl.id === 'chart-tile' ? [TEMP_BANDS, '°C'] : chartEl.id === 'chart-dew' ? [DEW_BANDS, '°C'] : null;
+  let bandEls = [], bandH = 0;
+  const H = mobile ? 500 : null;
+  const gridOrig = o.grid[0];
+  const gridTop = headH + legendH + 8;
+  const axisBottom = 30;
+  if (bands){ const g = bandsGraphic(bands[0], bands[1], W, 0, mobile); bandH = g.h + 12; bandEls = g.els; }
+  const totalH = mobile ? H : src.getHeight() - (gridOrig.top || 0) - (gridOrig.bottom || 0) + gridTop + axisBottom + bandH + footH;
+  const bandTop = totalH - footH - bandH + 4;
+  bandEls.forEach(e => { if (e.shape) e.shape.y += bandTop; else e.y += bandTop; });
+
+  Object.assign(gridOrig, {top:gridTop, bottom:axisBottom + bandH + footH});
+  if (mobile){
+    gridOrig.left = Math.min(gridOrig.left ?? 48, 46);
+    gridOrig.right = (o.yAxis || []).length > 1 ? 46 : 14;
+  }
+  o.title = [{text:titleLines.join('\n'), subtext:subLines.join('\n'), left:pad, top:12, itemGap:6,
+    textStyle:{color:INK, fontSize:titleSize, fontWeight:700, lineHeight:24, fontFamily:EXPORT_FONT},
+    subtextStyle:{color:INK2, fontSize:12, lineHeight:17, fontFamily:EXPORT_FONT}}];
+  o.tooltip = [{show:false}];
+  o.animation = false;
+  o.backgroundColor = BG;
+  // 坐标轴：字号 ≥ 12，手机版横轴标签抽稀
+  [...(o.xAxis || []), ...(o.yAxis || [])].forEach(a => {
+    a.axisLabel = {...(a.axisLabel || {}), fontSize:12, color:AXIS, hideOverlap:true, fontFamily:EXPORT_FONT};
+  });
+  if (mobile) (o.xAxis || []).forEach(a => {
+    if (a.type === 'value' && a.interval && a.min != null && a.max != null)
+      while ((a.max - a.min) / a.interval > 7) a.interval *= 2;
+  });
+  // 线宽：手机版普通线 2px、重点线（平均）3px
+  (o.series || []).forEach(s => {
+    if (s.markArea && s.markArea.label) s.markArea.label.fontSize = 12;
+    if (s.label) s.label.fontSize = Math.max(12, s.label.fontSize || 12);
+    if (s.type !== 'line' || !mobile) return;
+    const hi = /平均/.test(s.name || '');
+    s.lineStyle = {...(s.lineStyle || {}), width: hi ? 3 : 2};
+    if (s.showSymbol !== false && s.symbolSize) s.symbolSize = 6;
+  });
+  // 脚注 + 色带图例
+  const foot = footLines.map((ln, i) => ({type:'text', left:pad, top:totalH - footH + 4 + i*16,
+    style:{text:ln, fill:AXIS, fontSize:12, fontFamily:EXPORT_FONT}}));
+  o.graphic = [{elements:[...((o.graphic && o.graphic[0] && o.graphic[0].elements) || []), ...bandEls, ...foot]}];
+
+  // 离屏渲染
+  const box = document.createElement('div');
+  box.style.cssText = `position:fixed;left:-20000px;top:0;width:${W}px;height:${totalH}px`;
+  document.body.appendChild(box);
+  const tmp = echarts.init(box, null, {renderer:'canvas', width:W, height:totalH});
+  try {
+    EXPORT_MOBILE = mobile;
+    tmp.setOption(o);
+    await new Promise(r => setTimeout(r, 60));
+    const url = tmp.getDataURL({type:'png', pixelRatio: mobile ? 3 : 2, backgroundColor:BG});
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${title.replace(/\s*·\s*/g, '_').replace(/[\\/:*?"<>|\s]+/g, '_')}_${mobile ? '手机版' : '桌面版'}.png`;
+    document.body.appendChild(a); a.click(); a.remove();
+  } finally {
+    EXPORT_MOBILE = false;
+    tmp.dispose(); box.remove();
+  }
+}
+// 每张图的标题栏加导出按钮
+document.querySelectorAll('#charts .card').forEach(card => {
+  if (!card.querySelector('.chart')) return;
+  const wrap = document.createElement('div'); wrap.className = 'export';
+  [['desktop', '🖥️', '导出桌面版 PNG'], ['mobile', '📱', '导出手机版 PNG（竖版 4:5，1200×1500）']].forEach(([mode, icon, tip]) => {
+    const b = document.createElement('button'); b.type = 'button'; b.textContent = icon; b.title = tip; b.setAttribute('aria-label', tip);
+    b.onclick = async () => { b.disabled = true; try { await exportChart(card, mode); } finally { b.disabled = false; } };
+    wrap.appendChild(b);
+  });
+  card.querySelector('.card-head').appendChild(wrap);
+});
 
 setupRefControls('t');
 setupRefControls('h');
