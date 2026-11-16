@@ -19,6 +19,32 @@
 
 缺失数据用虚线连接；一天有效小时数不足时标记为“数据不足”且不计入统计。
 
+## 示例截图
+
+<p align="center">
+  <img src="screenshots/温度_2026年10月_桌面版.png" alt="温度_2026年10月_桌面版">
+  <br>
+  <sub>温度月度展示，湿度同理</sub>
+</p>
+
+<p align="center">
+  <img src="screenshots/温度_2026年10月_日变化叠加_桌面版.png" alt="温度_2026年10月_日变化叠加_桌面版">
+  <br>
+  <sub>温度日变化叠加，湿度同理</sub>
+</p>
+
+<p align="center">
+  <img src="screenshots/2026年10月_每小时平均温度_桌面版.png" alt="2026年10月_每小时平均温度_桌面版">
+  <br>
+  <sub>每小时平均温度</sub>
+</p>
+
+<p align="center">
+  <img src="screenshots/2026年10月_湿度舒适等级（按露点）_桌面版.png" alt="2026年10月_湿度舒适等级（按露点）_桌面版">
+  <br>
+  <sub>湿度舒适等级（按露点）</sub>
+</p>
+
 ## 特别鸣谢
 
 感谢 [@zhoulin12138](https://github.com/zhoulin12138) 为项目提供设备协助。
